@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>322252487406-e69kghpigjipjmgbs71emjnkkgtn8o0r.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.322252487406-e69kghpigjipjmgbs71emjnkkgtn8o0r</string>
+	<key>API_KEY</key>
+	<string>AIzaSyAfwe1FohentTXIQHkLDQ5Y8pg7vafDhxc</string>
+	<key>GCM_SENDER_ID</key>
+	<string>322252487406</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.example.articulicare</string>
+	<key>PROJECT_ID</key>
+	<string>articuli-care</string>
+	<key>STORAGE_BUCKET</key>
+	<string>articuli-care.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:322252487406:ios:4dfc1b31d3546f37ba51ff</string>
+</dict>
+</plist>
