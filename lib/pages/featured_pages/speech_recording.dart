@@ -1,281 +1,61 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_sound/flutter_sound.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'dart:io';
-import 'package:path_provider/path_provider.dart';
+import 'package:provider/provider.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:audio_waveforms/audio_waveforms.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-final supabase = Supabase.instance.client;
+import '../../../core/utils/audio/speech_analysis_service.dart';
+import '../../../core/utils/ml/tflite_service.dart';
+import '../../../viewmodels/speech_recording_viewmodel.dart';
 
-class SpeechRecording extends StatefulWidget {
+class SpeechRecording extends StatelessWidget {
   const SpeechRecording({super.key});
 
   @override
-  SpeechRecordingState createState() => SpeechRecordingState();
+  Widget build(BuildContext context) {
+    return ChangeNotifierProvider(
+      create: (context) {
+        final tfliteService = TfliteService();
+        final analysisService = SpeechAnalysisService(tfliteService);
+        return SpeechRecordingViewModel(analysisService, Supabase.instance.client);
+      },
+      child: const SpeechRecordingView(),
+    );
+  }
 }
 
-class SpeechRecordingState extends State<SpeechRecording> {
-  final FlutterSoundRecorder _recorder = FlutterSoundRecorder();
-  final RecorderController _waveController = RecorderController();
-  bool isRecording = false;
-  String? filePath;
-  bool isRecorderInitialized = false;
-  int recordingDuration = 0;
-  bool isProcessing = false;
-
-  @override
-  void initState() {
-    super.initState();
-    initializeRecorder();
-  }
-
-  @override
-  void dispose() {
-    if (_recorder.isRecording) {
-      _recorder.closeRecorder();
-    }
-    _waveController.dispose();
-    super.dispose();
-  }
-
-  Future<void> initializeRecorder() async {
-    var micStatus = await Permission.microphone.request();
-    if (micStatus.isGranted) {
-      try {
-        await _recorder.openRecorder();
-        setState(() {
-          isRecorderInitialized = true;
-        });
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to initialize recorder: $e')));
-        }
-      }
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          backgroundColor: Colors.blue,
-          content: Text('Microphone permission is required to record audio.'),
-        ));
-      }
-    }
-  }
-
-  Future<void> startRecording() async {
-    if (!isRecorderInitialized) {
-      await initializeRecorder();
-      if (!isRecorderInitialized) return;
-    }
-
-    var micStatus = await Permission.microphone.status;
-    if (micStatus.isGranted && isRecorderInitialized) {
-      Directory tempDir = await getTemporaryDirectory();
-      filePath = '${tempDir.path}/audio_recording.aac';
-      await _recorder.startRecorder(toFile: filePath);
-      await _waveController.record();
-      setState(() {
-        isRecording = true;
-        recordingDuration = 0;
-      });
-
-      Future.doWhile(() async {
-        if (!isRecording) return false;
-        await Future.delayed(const Duration(seconds: 1));
-        if (mounted) {
-          setState(() {
-            recordingDuration++;
-          });
-        }
-        return isRecording;
-      });
-    } else if (micStatus.isPermanentlyDenied) {
-      if (mounted) {
-        showDialog(
-          context: context,
-          builder: (BuildContext context) => AlertDialog(
-            title: const Text('Microphone Permission'),
-            content: const Text('This app requires microphone access to record audio. Please enable microphone access in app settings.'),
-            actions: [
-              TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
-              TextButton(onPressed: () { Navigator.of(context).pop(); openAppSettings(); }, child: const Text('Open Settings')),
-            ],
-          ),
-        );
-      }
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          backgroundColor: Colors.blue,
-          content: Text('Microphone access is restricted or unavailable.'),
-        ));
-      }
-    }
-  }
-
-  Future<void> stopRecording() async {
-    if (_recorder.isRecording) {
-      try {
-        await _recorder.stopRecorder();
-        await _waveController.stop();
-        setState(() {
-          isRecording = false;
-        });
-
-        if (filePath == null || !File(filePath!).existsSync()) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              backgroundColor: Colors.blue,
-              content: Text('Recording failed. File not found.'),
-            ));
-          }
-          return;
-        }
-
-        if (mounted) {
-          showConfirmationDialog();
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to stop recording: $e')));
-        }
-      }
-    }
-  }
-
-  Future<void> uploadRecording() async {
-    if (filePath == null) return;
-    File file = File(filePath!);
-
-    try {
-      String username = FirebaseAuth.instance.currentUser?.displayName ??
-          FirebaseAuth.instance.currentUser?.uid ??
-          "Anonymous";
-      String date = DateTime.now().toString().split(' ')[0];
-      String filePathInBucket =
-          'recordings/$username/$date/audio_${DateTime.now().millisecondsSinceEpoch}.aac';
-
-      final response = await supabase.storage
-          .from('speech_recordings')
-          .upload(filePathInBucket, file);
-
-      if (response.isEmpty) {
-        throw Exception("Failed to upload file. The response is empty.");
-      }
-
-      final publicUrl = supabase.storage
-          .from('speech_recordings')
-          .getPublicUrl(filePathInBucket);
-
-      await supabase.from('speech_samples').insert({
-        'audioUrl': publicUrl,
-        'timestamp': DateTime.now().toIso8601String(),
-        'username': username,
-      });
-
-      classifyRecording();
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          isProcessing = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          backgroundColor: Colors.red,
-          content: Text('Failed to upload recording: $e'),
-        ));
-      }
-    }
-  }
-
-  void showConfirmationDialog() {
-    if (mounted) {
-      showDialog(
-        context: context,
-        builder: (BuildContext context) => AlertDialog(
-          title: const Text('Recording Complete', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
-          content: const Text('Your audio has been recorded. Would you like to upload it for articulation analysis?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                setState(() {
-                  isProcessing = true;
-                });
-                Future.delayed(const Duration(seconds: 45), () {
-                  if (mounted) {
-                    uploadRecording();
-                  }
-                });
-              },
-              child: const Text('Upload', style: TextStyle(color: Colors.blue)),
-            ),
-          ],
-        ),
-      );
-    }
-  }
-
-  void classifyRecording() {
-    if (mounted) {
-      setState(() {
-        isProcessing = false;
-      });
-
-      showDialog(
-        context: context,
-        builder: (BuildContext context) => AlertDialog(
-          title: const Text('Speech Analysis Result', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
-          content: Text(
-            recordingDuration > 12
-                ? 'Your speech has been analyzed and classified as showing signs of Articulation Disorder. Please consult a speech therapist or Try Some quick Exercises'
-                : 'Your recording does not exhibit signs of articulation disorder. ',
-            style: const TextStyle(color: Colors.black87),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('OK', style: TextStyle(color: Colors.blue)),
-            ),
-          ],
-        ),
-      );
-    }
-  }
+class SpeechRecordingView extends StatelessWidget {
+  const SpeechRecordingView({super.key});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFFF7F9FC), // Sleek very light gray/blue bg
       appBar: AppBar(
         elevation: 0,
         centerTitle: true,
         title: const Text(
           'Voice Assessment',
-          style: TextStyle(color: Colors.black, fontSize: 20, fontWeight: FontWeight.bold),
+          style: TextStyle(color: Colors.black87, fontSize: 20, fontWeight: FontWeight.bold),
         ),
-        backgroundColor: Colors.white,
+        backgroundColor: Colors.transparent,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black),
+          icon: const Icon(Icons.arrow_back, color: Colors.black87),
           onPressed: () => Navigator.of(context).pop(),
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.info_outline, color: Colors.blue),
+            icon: const Icon(Icons.info_outline, color: Colors.blueAccent),
             onPressed: () {
               showDialog(
                 context: context,
                 builder: (context) => AlertDialog(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.r)),
                   title: const Text('About Voice Assessment'),
                   content: const Text(
-                    'This tool analyzes speech patterns to help identify potential articulation disorders. '
-                    'Speech recordings are processed using machine learning models to detect patterns associated with various speech conditions.\n\n'
-                    'This is not a diagnostic tool and should be used under the guidance of healthcare professionals.',
+                    'This tool uses advanced Machine Learning (TFLite) to analyze your speech features in real-time. '
+                    'It extracts Mel-Frequency Cepstral Coefficients (MFCCs) to identify potential signs of dysarthria.\n\n'
+                    'This is not a diagnostic tool. Please consult a healthcare professional for clinical advice.',
                   ),
                   actions: [
                     TextButton(
@@ -289,186 +69,305 @@ class SpeechRecordingState extends State<SpeechRecording> {
           ),
         ],
       ),
-      body: Stack(
-        children: [
-          SingleChildScrollView(
-            child: Padding(
-              padding: EdgeInsets.all(16.sp),
-              child: SafeArea(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      padding: EdgeInsets.all(16.sp),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12.r),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.grey.withOpacity(0.1),
-                            spreadRadius: 2,
-                            blurRadius: 5,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Speech Articulation Analysis',
-                            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black87),
-                          ).animate().fadeIn(duration: 500.ms),
-                          SizedBox(height: 8.h),
-                          const Text(
-                            'Record your speech for Articulation Analysis',
-                            style: TextStyle(fontSize: 16, color: Colors.black54),
-                          ).animate().fadeIn(duration: 500.ms, delay: 200.ms),
-                        ],
-                      ),
-                    ),
-                    SizedBox(height: 20.h),
-                    Container(
-                      padding: EdgeInsets.all(16.sp),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12.r),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.grey.withOpacity(0.1),
-                            spreadRadius: 2,
-                            blurRadius: 5,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Recording Guidelines:',
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87),
-                          ),
-                          SizedBox(height: 8.h),
-                          const BulletPoint(text: 'Speak clearly at a normal pace'),
-                          const BulletPoint(text: 'Record in a quiet environment'),
-                          const BulletPoint(text: 'Keep the phone 8-12 inches from your mouth'),
-                        ],
-                      ).animate().fadeIn(duration: 500.ms, delay: 400.ms),
-                    ),
-                    SizedBox(height: 20.h),
-                    if (isRecording) ...[
-                      Center(
-                        child: AudioWaveforms(
-                          size: Size(MediaQuery.of(context).size.width * 0.8, 100.h),
-                          recorderController: _waveController,
-                          enableGesture: false,
-                          waveStyle: const WaveStyle(
-                            waveColor: Colors.blue,
-                            showMiddleLine: true,
-                            middleLineColor: Colors.blueAccent,
-                            middleLineThickness: 2,
-                          ),
-                        ),
-                      ),
-                      SizedBox(height: 10.h),
-                      Center(
-                        child: Text(
-                          'Recording: ${recordingDuration}s',
-                          style: const TextStyle(fontSize: 16, color: Colors.black54),
-                        ),
-                      ),
-                      SizedBox(height: 20.h),
+      body: Consumer<SpeechRecordingViewModel>(
+        builder: (context, viewModel, child) {
+          if (viewModel.state == RecordingState.error && viewModel.errorMessage != null) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(viewModel.errorMessage!),
+                  backgroundColor: Colors.redAccent,
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+              viewModel.reset();
+            });
+          }
+
+          return Stack(
+            children: [
+              SingleChildScrollView(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 10.h),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _buildHeaderCard(),
+                      SizedBox(height: 24.h),
+                      _buildGuidelinesCard(),
+                      SizedBox(height: 40.h),
+                      _buildRecordingUI(context, viewModel),
+                      SizedBox(height: 30.h),
+                      if (viewModel.state == RecordingState.complete)
+                        _buildResultCard(viewModel).animate().slideY(begin: 0.2).fadeIn(),
                     ],
-                    Center(
-                      child: GestureDetector(
-                        onTap: isRecording ? stopRecording : startRecording,
-                        child: CircleAvatar(
-                          radius: 80.r,
-                          backgroundColor: Colors.blue,
-                          child: Icon(
-                            isRecording ? Icons.stop : Icons.mic,
-                            size: 60.sp,
-                            color: Colors.white,
-                          ),
-                        ).animate().scale(duration: 300.ms),
-                      ),
-                    ),
-                    SizedBox(height: 20.h),
-                    Center(
-                      child: Text(
-                        'Tap the microphone button to ${isRecording ? 'stop' : 'start'} recording',
-                        style: const TextStyle(fontSize: 16, color: Colors.black54),
-                      ),
-                    ),
-                    SizedBox(height: 20.h),
-                    Center(
-                      child: ElevatedButton.icon(
-                        onPressed: () {
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                              backgroundColor: Colors.blue,
-                              content: Text('Please record an audio file first.'),
-                            ));
-                          }
-                        },
-                        icon: const Icon(Icons.upload_file, color: Colors.blueAccent),
-                        label: const Text('Upload Recording', style: TextStyle(color: Colors.blue)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          foregroundColor: Colors.blue,
-                          side: const BorderSide(color: Colors.blue),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12.r),
-                          ),
-                        ),
-                      ).animate().fadeIn(duration: 500.ms, delay: 600.ms),
-                    ),
-                  ],
+                  ),
                 ),
               ),
-            ),
-          ),
-          if (isProcessing)
-            Container(
-              color: Colors.black.withOpacity(0.5),
-              child: const Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    CircularProgressIndicator(color: Colors.blue),
-                    SizedBox(height: 20),
-                    Text(
-                      'Processing your audio. This may take a moment as we extract features for speech classification...',
-                      style: TextStyle(color: Colors.white, fontSize: 16),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-        ],
+              if (viewModel.state == RecordingState.processing)
+                _buildProcessingOverlay(),
+            ],
+          );
+        },
       ),
     );
   }
-}
 
-class BulletPoint extends StatelessWidget {
-  final String text;
-  const BulletPoint({super.key, required this.text});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.symmetric(vertical: 4.h),
-      child: Row(
+  Widget _buildHeaderCard() {
+    return Container(
+      padding: EdgeInsets.all(20.sp),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16.r),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.blueAccent.withOpacity(0.05),
+            blurRadius: 20,
+            spreadRadius: 5,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.check_circle, color: Colors.blue, size: 20),
-          SizedBox(width: 8.w),
+          Row(
+            children: [
+              Container(
+                padding: EdgeInsets.all(10.sp),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.psychology, color: Colors.blueAccent, size: 28),
+              ),
+              SizedBox(width: 12.w),
+              Expanded(
+                child: const Text(
+                  'AI Speech Analysis',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black87),
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 12.h),
+          const Text(
+            'Record 3-5 seconds of speech to detect articulation patterns using our real-time dysarthria model.',
+            style: TextStyle(fontSize: 15, color: Colors.black54, height: 1.4),
+          ),
+        ],
+      ),
+    ).animate().fadeIn(duration: 400.ms, curve: Curves.easeOutQuad);
+  }
+
+  Widget _buildGuidelinesCard() {
+    return Container(
+      padding: EdgeInsets.all(20.sp),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16.r),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.blueAccent.withOpacity(0.05),
+            blurRadius: 20,
+            spreadRadius: 5,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Guidelines',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87),
+          ),
+          SizedBox(height: 12.h),
+          _buildBullet('Speak clearly at a normal pace'),
+          _buildBullet('Record in a quiet environment'),
+          _buildBullet('Hold device 8-12 inches away'),
+        ],
+      ),
+    ).animate().fadeIn(duration: 400.ms, delay: 200.ms, curve: Curves.easeOutQuad);
+  }
+
+  Widget _buildBullet(String text) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: 8.h),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          const Icon(Icons.check_circle_outline, color: Colors.green, size: 18),
+          SizedBox(width: 10.w),
           Expanded(child: Text(text, style: const TextStyle(fontSize: 14, color: Colors.black54))),
         ],
       ),
     );
+  }
+
+  Widget _buildRecordingUI(BuildContext context, SpeechRecordingViewModel viewModel) {
+    bool isRecording = viewModel.state == RecordingState.recording;
+    String timeStr = '${(viewModel.recordingDuration ~/ 60).toString().padLeft(2, '0')}:${(viewModel.recordingDuration % 60).toString().padLeft(2, '0')}';
+
+    return Column(
+      children: [
+        if (isRecording)
+          Text(
+            timeStr,
+            style: TextStyle(fontSize: 32.sp, fontWeight: FontWeight.bold, color: Colors.blueAccent),
+          ).animate(onPlay: (controller) => controller.repeat()).shimmer(duration: 1500.ms)
+        else
+          Text(
+            'Ready to Record',
+            style: TextStyle(fontSize: 20.sp, fontWeight: FontWeight.w600, color: Colors.black54),
+          ),
+        SizedBox(height: 30.h),
+        GestureDetector(
+          onTap: () {
+            if (isRecording) {
+              viewModel.stopRecording();
+            } else {
+              viewModel.startRecording();
+            }
+          },
+          child: Container(
+            width: 120.w,
+            height: 120.w,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: isRecording ? Colors.redAccent : Colors.blueAccent,
+              boxShadow: [
+                BoxShadow(
+                  color: (isRecording ? Colors.redAccent : Colors.blueAccent).withOpacity(0.3),
+                  blurRadius: 30,
+                  spreadRadius: 5,
+                )
+              ],
+            ),
+            child: Icon(
+              isRecording ? Icons.stop_rounded : Icons.mic_rounded,
+              color: Colors.white,
+              size: 50.sp,
+            ),
+          ).animate(target: isRecording ? 1 : 0)
+           .scale(begin: const Offset(1, 1), end: const Offset(1.1, 1.1), duration: 200.ms)
+           .then(delay: 200.ms)
+           .shimmer(duration: 1.seconds),
+        ),
+        SizedBox(height: 20.h),
+        Text(
+          isRecording ? 'Tap to Stop & Analyze' : 'Tap to Start',
+          style: const TextStyle(fontSize: 15, color: Colors.black54),
+        ),
+      ],
+    ).animate().fadeIn(duration: 500.ms, delay: 400.ms);
+  }
+
+  Widget _buildResultCard(SpeechRecordingViewModel viewModel) {
+    final int? result = viewModel.predictionResult;
+    if (result == null) return const SizedBox.shrink();
+
+    bool hasDysarthria = result == 1;
+
+    return Container(
+      padding: EdgeInsets.all(24.sp),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: hasDysarthria 
+              ? [Colors.orange.shade50, Colors.red.shade50]
+              : [Colors.green.shade50, Colors.teal.shade50],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20.r),
+        border: Border.all(
+          color: hasDysarthria ? Colors.orange.shade200 : Colors.green.shade200,
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: (hasDysarthria ? Colors.red : Colors.green).withOpacity(0.1),
+            blurRadius: 20,
+            spreadRadius: 2,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Icon(
+            hasDysarthria ? Icons.warning_amber_rounded : Icons.verified_rounded,
+            color: hasDysarthria ? Colors.orange : Colors.green,
+            size: 48.sp,
+          ).animate().scale(delay: 200.ms, duration: 400.ms, curve: Curves.easeOutBack),
+          SizedBox(height: 16.h),
+          Text(
+            hasDysarthria ? 'Signs of Dysarthria Detected' : 'No Signs of Dysarthria',
+            style: TextStyle(
+              fontSize: 20.sp,
+              fontWeight: FontWeight.bold,
+              color: hasDysarthria ? Colors.deepOrange.shade800 : Colors.green.shade800,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          SizedBox(height: 12.h),
+          Text(
+            hasDysarthria 
+              ? 'Our model detected features often associated with dysarthria. We recommend trying some daily vocal exercises and consulting a speech therapist.'
+              : 'Your speech patterns appear typical and do not strongly match the dysarthria features in our dataset.',
+            style: TextStyle(
+              fontSize: 14.sp,
+              color: Colors.black87,
+              height: 1.5,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          SizedBox(height: 20.h),
+          ElevatedButton(
+            onPressed: viewModel.reset,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: hasDysarthria ? Colors.orange : Colors.green,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.r)),
+              minimumSize: Size(double.infinity, 50.h),
+            ),
+            child: const Text('Record Again', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          )
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProcessingOverlay() {
+    return Container(
+      color: Colors.white.withOpacity(0.8), // Frosted glass effect fallback
+      child: Center(
+        child: Container(
+          padding: EdgeInsets.all(30.sp),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20.r),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.blueAccent.withOpacity(0.1),
+                blurRadius: 30,
+                spreadRadius: 10,
+              )
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(color: Colors.blueAccent),
+              SizedBox(height: 24.h),
+              const Text(
+                'Extracting MFCC Features...',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.black87),
+              ).animate(onPlay: (controller) => controller.repeat()).shimmer(duration: 2.seconds),
+            ],
+          ),
+        ),
+      ),
+    ).animate().fadeIn(duration: 300.ms);
   }
 }
