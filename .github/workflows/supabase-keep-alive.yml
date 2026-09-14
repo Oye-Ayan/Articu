@@ -1,0 +1,46 @@
+name: Supabase Keep-Alive
+
+on:
+  schedule:
+    # Runs every 12 hours (at 00:00 and 12:00 UTC) to prevent free-tier auto-pause
+    - cron: '0 */12 * * *'
+  workflow_dispatch: # Allows manual trigger from GitHub Actions dashboard
+
+jobs:
+  ping-supabase:
+    name: Database Keep-Alive Health Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify Configuration Secrets
+        run: |
+          if [ -z "${{ secrets.SUPABASE_URL }}" ] || [ -z "${{ secrets.SUPABASE_ANON_KEY }}" ]; then
+            echo "::error::SUPABASE_URL or SUPABASE_ANON_KEY secret is missing."
+            echo "Please configure them in your repository settings:"
+            echo "Settings -> Secrets and variables -> Actions -> New repository secret"
+            exit 1
+          fi
+
+      - name: Ping Supabase REST API
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          echo "Executing lightweight keep-alive query against Supabase..."
+          
+          # Query a single ID with limit 1 to generate legitimate database read activity
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X GET "${SUPABASE_URL}/rest/v1/therapists?select=id&limit=1" \
+            -H "apikey: ${SUPABASE_ANON_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
+            -H "User-Agent: ArticuliCare-KeepAlive-Bot/1.0" \
+            --connect-timeout 15 \
+            --max-time 30)
+
+          echo "Response HTTP Status: ${HTTP_STATUS}"
+
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+            echo "✓ Keep-alive ping successful. Supabase database activity registered."
+          else
+            echo "::warning::Supabase returned HTTP status ${HTTP_STATUS}. Check project status if paused."
+            exit 1
+          fi
