@@ -184,60 +184,69 @@ class HomeScreen extends StatelessWidget {
         return Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      'Hello, $greetingPrefix$displayName 👋',
-                      style: AppTextStyles.titleLarge.copyWith(
-                        fontSize: 20.sp,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    SizedBox(width: 8.w),
-                    Container(
-                      padding:
-                          EdgeInsets.symmetric(horizontal: 8.w, vertical: 2.h),
-                      decoration: BoxDecoration(
-                        color: role.isTherapist
-                            ? const Color(0xFFE8F5E9)
-                            : role.isCaregiver
-                                ? const Color(0xFFFFF3E0)
-                                : AppColors.primarySoft,
-                        borderRadius: BorderRadius.circular(8.r),
-                        border: Border.all(
-                          color: role.isTherapist
-                              ? const Color(0xFF81C784)
-                              : role.isCaregiver
-                                  ? const Color(0xFFFFB74D)
-                                  : AppColors.primaryLight,
-                          width: 0.8,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          'Hello, $greetingPrefix$displayName 👋',
+                          style: AppTextStyles.titleLarge.copyWith(
+                            fontSize: 20.sp,
+                            fontWeight: FontWeight.w800,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      child: Text(
-                        role.displayName,
-                        style: AppTextStyles.caption.copyWith(
+                      SizedBox(width: 8.w),
+                      Container(
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 8.w, vertical: 2.h),
+                        decoration: BoxDecoration(
                           color: role.isTherapist
-                              ? const Color(0xFF2E7D32)
+                              ? const Color(0xFFE8F5E9)
                               : role.isCaregiver
-                                  ? const Color(0xFFE65100)
-                                  : AppColors.primary,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 10.sp,
+                                  ? const Color(0xFFFFF3E0)
+                                  : AppColors.primarySoft,
+                          borderRadius: BorderRadius.circular(8.r),
+                          border: Border.all(
+                            color: role.isTherapist
+                                ? const Color(0xFF81C784)
+                                : role.isCaregiver
+                                    ? const Color(0xFFFFB74D)
+                                    : AppColors.primaryLight,
+                            width: 0.8,
+                          ),
+                        ),
+                        child: Text(
+                          role.displayName,
+                          style: AppTextStyles.caption.copyWith(
+                            color: role.isTherapist
+                                ? const Color(0xFF2E7D32)
+                                : role.isCaregiver
+                                    ? const Color(0xFFE65100)
+                                    : AppColors.primary,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 10.sp,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
-                SizedBox(height: 4.h),
-                Text(
-                  subtitle,
-                  style: AppTextStyles.bodyMedium,
-                ),
-              ],
+                    ],
+                  ),
+                  SizedBox(height: 4.h),
+                  Text(
+                    subtitle,
+                    style: AppTextStyles.bodyMedium,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
             ),
+            SizedBox(width: 12.w),
             GestureDetector(
               onTap: () {
                 context
