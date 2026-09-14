@@ -5,9 +5,36 @@ import '../constants/app_constants.dart';
 class SupabaseService {
   static final SupabaseService _instance = SupabaseService._internal();
   factory SupabaseService() => _instance;
+  static SupabaseService get instance => _instance;
   SupabaseService._internal();
 
   SupabaseClient get client => Supabase.instance.client;
+
+  DateTime? _lastKeepAlivePing;
+
+  /// Lightweight keep-alive health check to prevent Supabase auto-pause.
+  /// Throttled to at most once every 12 hours per active session.
+  Future<bool> pingDatabaseHealthCheck({bool force = false}) async {
+    final now = DateTime.now();
+    if (!force &&
+        _lastKeepAlivePing != null &&
+        now.difference(_lastKeepAlivePing!).inHours < 12) {
+      return true;
+    }
+
+    try {
+      final response = await client
+          .from(AppConstants.therapistsTable)
+          .select('id')
+          .limit(1);
+      _lastKeepAlivePing = now;
+      debugPrint('Supabase keep-alive ping succeeded at $now');
+      return response.isNotEmpty;
+    } catch (e) {
+      debugPrint('Supabase keep-alive ping failed: $e');
+      return false;
+    }
+  }
 
   // ---------------------------------------------------------------------------
   // User Profiles & Data
@@ -35,10 +62,6 @@ class SupabaseService {
       return null;
     }
   }
-
-  /// Backwards-compatible alias for getUserProfile
-  Future<Map<String, dynamic>?> getUserData(String userId) =>
-      getUserProfile(userId);
 
   /// Upsert full user profile into user_profiles and sync users_data
   Future<void> saveUserProfile({
