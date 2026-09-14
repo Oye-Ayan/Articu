@@ -150,16 +150,42 @@ class SupabaseService {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Training Videos & Progress
-  // ---------------------------------------------------------------------------
+  /// Fetch list of available training video files directly from Supabase Storage
+  Future<List<String>> fetchTrainingVideoFileNames() async {
+    try {
+      final response = await client.storage
+          .from(AppConstants.trainingVideosBucket)
+          .list();
+      final names = response
+          .map((f) => f.name)
+          .where((name) => name.endsWith('.mp4') || name.endsWith('.m4v'))
+          .toList();
+      if (names.isNotEmpty) return names;
+    } catch (e) {
+      debugPrint('fetchTrainingVideoFileNames error from training-videos: $e');
+    }
 
-  /// Get public URL for a video in training_videos folder under speech_recordings bucket
+    try {
+      final response = await client.storage
+          .from(AppConstants.speechRecordingsBucket)
+          .list(path: 'training_videos');
+      return response
+          .map((f) => f.name)
+          .where((name) => name.endsWith('.mp4') || name.endsWith('.m4v'))
+          .toList();
+    } catch (e) {
+      debugPrint('fetchTrainingVideoFileNames error from speech_recordings: $e');
+      return [];
+    }
+  }
+
+  /// Get public URL for a video from Supabase Storage
   String getVideoPublicUrl(String fileName) {
-    final encodedFileName = Uri.encodeComponent(fileName);
+    final cleanName = Uri.decodeComponent(fileName.split('/').last);
+    final encodedFileName = Uri.encodeComponent(cleanName);
     return client.storage
-        .from(AppConstants.speechRecordingsBucket)
-        .getPublicUrl('training_videos/$encodedFileName');
+        .from(AppConstants.trainingVideosBucket)
+        .getPublicUrl(encodedFileName);
   }
 
   /// Fetch user training progress (all days, or filtered by dayNumber)

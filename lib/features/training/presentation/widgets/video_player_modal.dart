@@ -66,21 +66,28 @@ class _VideoPlayerModalState extends State<VideoPlayerModal> {
     try {
       final tempDir = await getTemporaryDirectory();
 
-      // Clean up legacy cache directory from previous versions if present
-      final oldDir = Directory('${tempDir.path}/training_videos');
-      if (oldDir.existsSync()) {
-        try {
-          oldDir.deleteSync(recursive: true);
-        } catch (_) {}
+      // Clean up legacy cache directories from previous versions
+      for (final legacyPath in [
+        'training_videos',
+        'training_videos_v2',
+        'training_videos_v3',
+        'training_videos_v4'
+      ]) {
+        final legacyDir = Directory('${tempDir.path}/$legacyPath');
+        if (legacyDir.existsSync()) {
+          try {
+            legacyDir.deleteSync(recursive: true);
+          } catch (_) {}
+        }
       }
 
-      final dir = Directory('${tempDir.path}/training_videos_v2');
+      final dir = Directory('${tempDir.path}/training_videos_v5');
       if (!dir.existsSync()) {
         await dir.create(recursive: true);
       }
 
       final safeName =
-          'std_${fileName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_')}';
+          'v5_${fileName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_')}';
       final targetFile = File('${dir.path}/$safeName');
 
       if (!forceRefresh &&
@@ -103,9 +110,12 @@ class _VideoPlayerModalState extends State<VideoPlayerModal> {
       }
 
       final httpClient = HttpClient();
-      httpClient.connectionTimeout = const Duration(seconds: 20);
+      httpClient.connectionTimeout = const Duration(seconds: 25);
       final request = await httpClient.getUrl(Uri.parse(url));
-      request.headers.set('User-Agent', 'Mozilla/5.0 (Linux; Android) ArticuliCare');
+      request.followRedirects = true;
+      request.maxRedirects = 5;
+      request.headers
+          .set('User-Agent', 'Mozilla/5.0 (Linux; Android) ArticuliCare');
       request.headers.set('Accept', '*/*');
       final response = await request.close();
 
@@ -178,28 +188,18 @@ class _VideoPlayerModalState extends State<VideoPlayerModal> {
         forceRefresh: forceRefresh,
       );
 
-      VideoPlayerController controller;
-      if (cachedFile != null &&
-          cachedFile.existsSync() &&
-          cachedFile.lengthSync() > 10000) {
-        if (mounted) {
-          setState(() {
-            _loadingStatus = 'Initializing playback engine...';
-          });
-        }
-        controller = VideoPlayerController.file(cachedFile);
-      } else {
-        if (mounted) {
-          setState(() {
-            _loadingStatus = 'Streaming video from cloud...';
-          });
-        }
-        controller = VideoPlayerController.networkUrl(Uri.parse(url));
+      if (mounted) {
+        setState(() {
+          _loadingStatus = 'Initializing playback engine...';
+        });
       }
 
-      _controller = controller;
+      final controller = await _createAndInitController(
+        file: cachedFile,
+        networkUrl: url,
+      );
 
-      await controller.initialize();
+      _controller = controller;
       controller.addListener(_onPlayerUpdate);
       controller.setLooping(false);
 
@@ -212,38 +212,95 @@ class _VideoPlayerModalState extends State<VideoPlayerModal> {
         _startHideTimer();
       }
     } catch (e) {
-      debugPrint('Primary video init error: $e. Trying fallback stream...');
+      debugPrint('Video playback initialization failed: $e');
+      if (_controller != null) {
+        try {
+          await _controller!.dispose();
+        } catch (_) {}
+        _controller = null;
+      }
       if (cachedFile != null && cachedFile.existsSync()) {
         try {
           cachedFile.deleteSync();
         } catch (_) {}
       }
-      // Fallback: If file-based initialization hit an issue, attempt direct network stream
-      try {
-        final fallbackController =
-            VideoPlayerController.networkUrl(Uri.parse(url));
-        _controller = fallbackController;
-        await fallbackController.initialize();
-        fallbackController.addListener(_onPlayerUpdate);
-        fallbackController.setLooping(false);
-
-        if (mounted) {
-          setState(() {
-            _isInitialized = true;
-            _errorMessage = null;
-          });
-          fallbackController.play();
-          _startHideTimer();
-        }
-      } catch (fallbackError) {
-        if (mounted) {
-          setState(() {
-            _errorMessage =
-                'Could not play video ($fallbackError).\n\nPlease check network or tap Retry to re-download.';
-          });
-        }
+      if (mounted) {
+        final errStr = e.toString();
+        final isCodecIssue = errStr.contains('MediaCodec') ||
+            errStr.contains('ExoPlaybackException') ||
+            errStr.contains('decoder');
+        setState(() {
+          _errorMessage = isCodecIssue
+              ? 'Device video decoder error. Tap Retry to reload.'
+              : 'Unable to load video: ${errStr.split('\n').first}\nTap Retry to reload.';
+        });
       }
     }
+  }
+
+  Future<VideoPlayerController> _createAndInitController({
+    File? file,
+    required String networkUrl,
+  }) async {
+    // 1. Try local file with PlatformView (native SurfaceView) to bypass ImageReader-1x1 decoder bug
+    if (file != null && file.existsSync() && file.lengthSync() > 1000) {
+      VideoPlayerController? pvFileCtrl;
+      try {
+        pvFileCtrl = VideoPlayerController.file(
+          file,
+          viewType: VideoViewType.platformView,
+        );
+        await pvFileCtrl.initialize();
+        return pvFileCtrl;
+      } catch (e) {
+        debugPrint(
+            'PlatformView file init failed: $e, trying textureView file...');
+        try {
+          await pvFileCtrl?.dispose();
+        } catch (_) {}
+      }
+
+      // 2. Try local file with TextureView
+      VideoPlayerController? tvFileCtrl;
+      try {
+        tvFileCtrl = VideoPlayerController.file(
+          file,
+          viewType: VideoViewType.textureView,
+        );
+        await tvFileCtrl.initialize();
+        return tvFileCtrl;
+      } catch (e) {
+        debugPrint('TextureView file init failed: $e, trying cloud stream...');
+        try {
+          await tvFileCtrl?.dispose();
+        } catch (_) {}
+      }
+    }
+
+    // 3. Try network streaming with PlatformView (native SurfaceView)
+    VideoPlayerController? pvNetCtrl;
+    try {
+      pvNetCtrl = VideoPlayerController.networkUrl(
+        Uri.parse(networkUrl),
+        viewType: VideoViewType.platformView,
+      );
+      await pvNetCtrl.initialize();
+      return pvNetCtrl;
+    } catch (e) {
+      debugPrint(
+          'PlatformView network stream failed: $e, trying textureView network...');
+      try {
+        await pvNetCtrl?.dispose();
+      } catch (_) {}
+    }
+
+    // 4. Try network streaming with TextureView
+    final tvNetCtrl = VideoPlayerController.networkUrl(
+      Uri.parse(networkUrl),
+      viewType: VideoViewType.textureView,
+    );
+    await tvNetCtrl.initialize();
+    return tvNetCtrl;
   }
 
   void _onPlayerUpdate() {
@@ -319,7 +376,9 @@ class _VideoPlayerModalState extends State<VideoPlayerModal> {
 
     return SafeArea(
       child: Container(
-        height: isLandscape ? mediaQuery.size.height : mediaQuery.size.height * 0.88,
+        height: isLandscape
+            ? mediaQuery.size.height
+            : mediaQuery.size.height * 0.88,
         decoration: BoxDecoration(
           color: const Color(0xFF0F172A),
           borderRadius: BorderRadius.vertical(top: Radius.circular(24.r)),
@@ -368,7 +427,8 @@ class _VideoPlayerModalState extends State<VideoPlayerModal> {
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close_rounded, color: Colors.white70),
+                    icon:
+                        const Icon(Icons.close_rounded, color: Colors.white70),
                     onPressed: () => Navigator.pop(context),
                   ),
                 ],
@@ -419,8 +479,8 @@ class _VideoPlayerModalState extends State<VideoPlayerModal> {
                                     value: _downloadProgress,
                                     strokeWidth: 3.2,
                                     color: AppColors.primary,
-                                    backgroundColor:
-                                        AppColors.primary.withValues(alpha: 0.2),
+                                    backgroundColor: AppColors.primary
+                                        .withValues(alpha: 0.2),
                                   ),
                                 ),
                                 SizedBox(height: 16.h),
@@ -618,7 +678,6 @@ class _VideoPlayerModalState extends State<VideoPlayerModal> {
                 },
               ),
             ),
-
           ],
         ),
       ),

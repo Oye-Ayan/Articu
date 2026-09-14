@@ -105,17 +105,32 @@ class TrainingCubit extends Cubit<TrainingState> {
   Future<void> initLessons() async {
     emit(state.copyWith(isLoading: true));
 
+    // Dynamically fetch available video file names from Supabase Storage
+    List<String> remoteFileNames = [];
+    try {
+      remoteFileNames = await _supabaseService.fetchTrainingVideoFileNames();
+    } catch (_) {}
+
     final baseLessons = <TrainingLesson>[];
     for (int i = 0; i < _videoCatalog.length; i++) {
       final item = _videoCatalog[i];
-      final videoUrl = _supabaseService.getVideoPublicUrl(item['fileName']!);
+      final rawFileName = item['fileName']!;
+
+      // Match against remote filenames case-insensitively if available
+      final matchedFileName = remoteFileNames.firstWhere(
+        (remote) =>
+            remote.trim().toLowerCase() == rawFileName.trim().toLowerCase(),
+        orElse: () => rawFileName,
+      );
+
+      final videoUrl = _supabaseService.getVideoPublicUrl(matchedFileName);
 
       baseLessons.add(TrainingLesson(
         id: 'lesson_${state.selectedDay}_$i',
         title: item['title']!,
         description: item['description']!,
         durationMinutes: item['duration']!,
-        videoFileName: item['fileName']!,
+        videoFileName: matchedFileName,
         videoUrl: videoUrl,
         points: 10,
         dayNumber: state.selectedDay,
