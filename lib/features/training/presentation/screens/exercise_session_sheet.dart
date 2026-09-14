@@ -8,6 +8,7 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/custom_snackbar.dart';
 import '../../domain/training_lesson.dart';
 import '../cubit/training_cubit.dart';
+import '../widgets/video_player_modal.dart';
 
 class ExerciseSessionSheet extends StatefulWidget {
   final TrainingLesson lesson;
@@ -61,13 +62,17 @@ class _ExerciseSessionSheetState extends State<ExerciseSessionSheet> {
   }
 
   void _completeDrill() {
-    context.read<TrainingCubit>().markLessonCompleted(widget.lesson.id);
+    context.read<TrainingCubit>().markLessonCompleted(
+          widget.lesson.exerciseIndex,
+          points: widget.lesson.points,
+        );
     Navigator.pop(context);
     CustomSnackBar.showSuccess(
       context,
       'Lesson "${widget.lesson.title}" completed! 🎉',
     );
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -277,9 +282,40 @@ class _ExerciseSessionSheetState extends State<ExerciseSessionSheet> {
               ),
             ],
           ),
+          if (widget.lesson.videoFileName.isNotEmpty) ...[
+
+            SizedBox(height: 12.h),
+            OutlinedButton.icon(
+              onPressed: () {
+                Navigator.pop(context);
+                VideoPlayerModal.show(
+                  context,
+                  lesson: widget.lesson,
+                  onCompleted: () {
+                    context.read<TrainingCubit>().markLessonCompleted(
+                          widget.lesson.exerciseIndex,
+                          points: widget.lesson.points,
+                        );
+                  },
+                );
+              },
+              icon: const Icon(Icons.play_circle_fill_rounded,
+                  color: AppColors.primary),
+              label: const Text('Watch Video Demonstration'),
+              style: OutlinedButton.styleFrom(
+                minimumSize: Size(double.infinity, 44.h),
+                side: const BorderSide(color: AppColors.primaryLight),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14.r),
+                ),
+              ),
+            ),
+          ],
           SizedBox(height: 10.h),
         ],
       ),
     );
   }
 }
+
+

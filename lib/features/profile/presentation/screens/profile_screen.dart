@@ -149,9 +149,63 @@ class ProfileScreen extends StatelessWidget {
                     state.email.isNotEmpty ? state.email : 'user@articulicare.com',
                     style: AppTextStyles.bodySmall,
                   ),
-                  SizedBox(height: 20.h),
+                  SizedBox(height: 8.h),
 
-                  // Quick Stats Row
+                  // Role Badge
+                  Container(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: 10.w,
+                      vertical: 4.h,
+                    ),
+                    decoration: BoxDecoration(
+                      color: state.role.isTherapist
+                          ? const Color(0xFFE8F5E9)
+                          : state.role.isCaregiver
+                              ? const Color(0xFFFFF3E0)
+                              : AppColors.primarySoft,
+                      borderRadius: BorderRadius.circular(12.r),
+                      border: Border.all(
+                        color: state.role.isTherapist
+                            ? const Color(0xFF81C784)
+                            : state.role.isCaregiver
+                                ? const Color(0xFFFFB74D)
+                                : AppColors.primaryLight,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          state.role.isTherapist
+                              ? Icons.medical_services_rounded
+                              : state.role.isCaregiver
+                                  ? Icons.volunteer_activism_rounded
+                                  : Icons.person_rounded,
+                          size: 14.sp,
+                          color: state.role.isTherapist
+                              ? const Color(0xFF2E7D32)
+                              : state.role.isCaregiver
+                                  ? const Color(0xFFE65100)
+                                  : AppColors.primary,
+                        ),
+                        SizedBox(width: 4.w),
+                        Text(
+                          state.role.displayName,
+                          style: AppTextStyles.caption.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: state.role.isTherapist
+                                ? const Color(0xFF2E7D32)
+                                : state.role.isCaregiver
+                                    ? const Color(0xFFE65100)
+                                    : AppColors.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  SizedBox(height: 16.h),
+
+                  // Quick Stats Row (Live dynamic data)
                   Container(
                     padding: EdgeInsets.symmetric(
                       horizontal: 16.w,
@@ -165,19 +219,26 @@ class ProfileScreen extends StatelessWidget {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceAround,
                       children: [
-                        _profileStat('5 Days', 'Active Streak'),
+                        _profileStat('${state.streakDays} Days', 'Active Streak'),
                         Container(
                           width: 1,
                           height: 28.h,
                           color: AppColors.border,
                         ),
-                        _profileStat('18', 'Audio Drills'),
+                        _profileStat('${state.audioDrillsCount}', 'Audio Drills'),
                         Container(
                           width: 1,
                           height: 28.h,
                           color: AppColors.border,
                         ),
-                        _profileStat('88%', 'Pronunciation'),
+                        _profileStat(
+                          state.totalPoints > 0
+                              ? '${state.totalPoints} pts'
+                              : state.pronunciationScore,
+                          state.totalPoints > 0
+                              ? 'Total Points'
+                              : 'Pronunciation',
+                        ),
                       ],
                     ),
                   ),
@@ -190,7 +251,9 @@ class ProfileScreen extends StatelessWidget {
                     _switchTile(
                       icon: Icons.notifications_active_outlined,
                       title: 'Practice Reminder Notifications',
-                      subtitle: 'Daily gentle nudge at 09:00 AM',
+                      subtitle: state.practiceReminderTime != null
+                          ? 'Daily gentle nudge at ${state.practiceReminderTime}'
+                          : 'Daily practice notifications',
                       value: state.notificationsEnabled,
                       onChanged: (val) {
                         context.read<ProfileCubit>().toggleNotifications(val);

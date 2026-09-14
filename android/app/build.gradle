@@ -18,7 +18,7 @@ def flutterVersionName = localProperties.getProperty("flutter.versionName", "1.0
 
 android {
     namespace = "com.example.articulicare"
-    compileSdk = 34
+    compileSdk = 36
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

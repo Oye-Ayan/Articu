@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:audioplayers/audioplayers.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:flutter_sound/flutter_sound.dart';
+import 'package:flutter_sound/flutter_sound.dart' hide PlayerState;
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../../../../core/constants/app_constants.dart';
@@ -11,35 +14,74 @@ import 'speech_state.dart';
 
 class SpeechCubit extends Cubit<SpeechState> {
   final SupabaseService _supabaseService;
+  final FirebaseAuth _firebaseAuth;
   final FlutterSoundRecorder _recorder = FlutterSoundRecorder();
+  final AudioPlayer _audioPlayer = AudioPlayer();
+
   bool _isRecorderInitialized = false;
   Timer? _durationTimer;
+  StreamSubscription? _playerStateSubscription;
+  StreamSubscription? _positionSubscription;
+  StreamSubscription? _durationSubscription;
+  StreamSubscription? _completeSubscription;
 
-  SpeechCubit({SupabaseService? supabaseService})
-      : _supabaseService = supabaseService ?? SupabaseService(),
+  SpeechCubit({
+    SupabaseService? supabaseService,
+    FirebaseAuth? firebaseAuth,
+  })  : _supabaseService = supabaseService ?? SupabaseService(),
+        _firebaseAuth = firebaseAuth ?? FirebaseAuth.instance,
         super(const SpeechState()) {
-    _loadInitialMockRecordings();
+    _initAudioPlayerListeners();
+    fetchLiveRecordings();
   }
 
-  void _loadInitialMockRecordings() {
-    emit(state.copyWith(
-      recentRecordings: [
-        SpeechSampleModel(
-          id: 'rec-1',
-          audioUrl: '',
-          timestamp: DateTime.now().subtract(const Duration(hours: 2)),
-          username: 'You',
-          duration: const Duration(seconds: 14),
-        ),
-        SpeechSampleModel(
-          id: 'rec-2',
-          audioUrl: '',
-          timestamp: DateTime.now().subtract(const Duration(days: 1)),
-          username: 'You',
-          duration: const Duration(seconds: 22),
-        ),
-      ],
-    ));
+  void _initAudioPlayerListeners() {
+    _playerStateSubscription = _audioPlayer.onPlayerStateChanged.listen((pState) {
+      final isPlaying = pState == PlayerState.playing;
+      emit(state.copyWith(isPlayingAudio: isPlaying));
+    });
+
+    _positionSubscription = _audioPlayer.onPositionChanged.listen((pos) {
+      emit(state.copyWith(playbackPosition: pos));
+    });
+
+    _durationSubscription = _audioPlayer.onDurationChanged.listen((dur) {
+      emit(state.copyWith(playbackDuration: dur));
+    });
+
+    _completeSubscription = _audioPlayer.onPlayerComplete.listen((_) {
+      emit(state.copyWith(
+        isPlayingAudio: false,
+        currentlyPlayingId: null,
+        playbackPosition: Duration.zero,
+      ));
+    });
+  }
+
+  Future<void> fetchLiveRecordings() async {
+    final user = _firebaseAuth.currentUser;
+    final userId = user?.uid ?? '';
+
+    emit(state.copyWith(isLoadingRecordings: true));
+    try {
+      final rows = await _supabaseService.fetchSpeechSamples(userId);
+      final samples = rows.map((m) => SpeechSampleModel.fromMap(m)).toList();
+
+      emit(state.copyWith(
+        recentRecordings: samples,
+        isLoadingRecordings: false,
+      ));
+    } catch (e) {
+      debugPrint('Error fetching speech samples: $e');
+      emit(state.copyWith(
+        isLoadingRecordings: false,
+        errorMessage: 'Could not load speech samples from cloud.',
+      ));
+    }
+  }
+
+  void setSearchQuery(String query) {
+    emit(state.copyWith(searchQuery: query));
   }
 
   Future<bool> _ensureRecorderInitialized() async {
@@ -66,6 +108,11 @@ class SpeechCubit extends Cubit<SpeechState> {
   }
 
   Future<void> startRecording() async {
+    // Stop any active audio playback before recording
+    if (state.isPlayingAudio) {
+      await stopAudio();
+    }
+
     final ready = await _ensureRecorderInitialized();
     if (!ready) return;
 
@@ -107,9 +154,7 @@ class SpeechCubit extends Cubit<SpeechState> {
       final currentDuration = state.recordingDuration;
       final filePath = state.recordedFilePath;
 
-      emit(state.copyWith(
-        isRecording: false,
-      ));
+      emit(state.copyWith(isRecording: false));
 
       if (filePath != null && File(filePath).existsSync()) {
         await uploadRecording(
@@ -134,6 +179,7 @@ class SpeechCubit extends Cubit<SpeechState> {
     emit(state.copyWith(isUploading: true, errorMessage: null));
 
     try {
+      final user = _firebaseAuth.currentUser;
       final file = File(filePath);
       final bytes = await file.readAsBytes();
       final safeUsername = username.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
@@ -150,20 +196,25 @@ class SpeechCubit extends Cubit<SpeechState> {
       await _supabaseService.saveSpeechSample(
         audioUrl: publicUrl,
         username: username,
+        userId: user?.uid,
+        durationSeconds: duration.inSeconds.toString(),
+        filePath: storagePath,
       );
 
       final newSample = SpeechSampleModel(
-        id: 'sample_${DateTime.now().millisecondsSinceEpoch}',
+        id: '${DateTime.now().millisecondsSinceEpoch}',
         audioUrl: publicUrl,
         timestamp: DateTime.now(),
         username: username,
         duration: duration,
+        filePath: storagePath,
+        userId: user?.uid,
       );
 
       emit(state.copyWith(
         isUploading: false,
         lastUploadedUrl: publicUrl,
-        successMessage: 'Speech sample uploaded and analyzed successfully!',
+        successMessage: 'Speech sample uploaded and saved to Supabase! ✔',
         recentRecordings: [newSample, ...state.recentRecordings],
       ));
     } catch (e) {
@@ -174,9 +225,77 @@ class SpeechCubit extends Cubit<SpeechState> {
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Audio Playback Controls
+  // ---------------------------------------------------------------------------
+
+  Future<void> togglePlayAudio(SpeechSampleModel sample) async {
+    try {
+      if (state.currentlyPlayingId == sample.id) {
+        if (state.isPlayingAudio) {
+          await _audioPlayer.pause();
+        } else {
+          await _audioPlayer.resume();
+        }
+      } else {
+        await _audioPlayer.stop();
+
+        emit(state.copyWith(
+          currentlyPlayingId: sample.id,
+          playbackPosition: Duration.zero,
+          playbackDuration: sample.duration,
+        ));
+
+        if (sample.audioUrl.isNotEmpty && sample.audioUrl.startsWith('http')) {
+          await _audioPlayer.play(UrlSource(sample.audioUrl));
+        } else if (sample.filePath != null && File(sample.filePath!).existsSync()) {
+          await _audioPlayer.play(DeviceFileSource(sample.filePath!));
+        } else {
+          emit(state.copyWith(
+            errorMessage: 'Audio source unavailable for playback.',
+            currentlyPlayingId: null,
+          ));
+        }
+      }
+    } catch (e) {
+      debugPrint('Playback error: $e');
+      emit(state.copyWith(
+        errorMessage: 'Could not play audio: $e',
+        currentlyPlayingId: null,
+        isPlayingAudio: false,
+      ));
+    }
+  }
+
+  Future<void> seekAudio(Duration position) async {
+    try {
+      await _audioPlayer.seek(position);
+    } catch (e) {
+      debugPrint('Seek error: $e');
+    }
+  }
+
+  Future<void> stopAudio() async {
+    try {
+      await _audioPlayer.stop();
+      emit(state.copyWith(
+        isPlayingAudio: false,
+        currentlyPlayingId: null,
+        playbackPosition: Duration.zero,
+      ));
+    } catch (e) {
+      debugPrint('Stop audio error: $e');
+    }
+  }
+
   @override
   Future<void> close() {
     _durationTimer?.cancel();
+    _playerStateSubscription?.cancel();
+    _positionSubscription?.cancel();
+    _durationSubscription?.cancel();
+    _completeSubscription?.cancel();
+    _audioPlayer.dispose();
     if (_recorder.isRecording) {
       _recorder.stopRecorder();
     }

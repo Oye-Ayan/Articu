@@ -6,7 +6,7 @@ import '../../../../core/theme/app_text_styles.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../cubit/training_cubit.dart';
 import '../cubit/training_state.dart';
-import 'exercise_session_sheet.dart';
+import '../widgets/video_player_modal.dart';
 
 class TrainingScreen extends StatelessWidget {
   const TrainingScreen({super.key});
@@ -283,12 +283,23 @@ class TrainingScreen extends StatelessWidget {
                                 if (!lesson.isLocked)
                                   InkWell(
                                     onTap: () {
-                                      ExerciseSessionSheet.show(context, lesson);
+                                      VideoPlayerModal.show(
+                                        context,
+                                        lesson: lesson,
+                                        onCompleted: () {
+                                          context
+                                              .read<TrainingCubit>()
+                                              .markLessonCompleted(
+                                                lesson.exerciseIndex,
+                                                points: lesson.points,
+                                              );
+                                        },
+                                      );
                                     },
                                     child: Padding(
                                       padding: EdgeInsets.all(4.w),
                                       child: Text(
-                                        lesson.isCompleted ? 'Review' : 'Start',
+                                        lesson.isCompleted ? 'Review' : 'Play',
                                         style: AppTextStyles.caption.copyWith(
                                           color: AppColors.primary,
                                           fontWeight: FontWeight.w700,
@@ -308,13 +319,24 @@ class TrainingScreen extends StatelessWidget {
                   // Start Next Drill Button
                   AppButton(
                     text: 'Continue Today\'s Session',
-                    icon: Icons.bolt_rounded,
+                    icon: Icons.play_arrow_rounded,
                     onTap: () {
                       final nextLesson = state.lessons.firstWhere(
                         (l) => !l.isCompleted && !l.isLocked,
                         orElse: () => state.lessons.first,
                       );
-                      ExerciseSessionSheet.show(context, nextLesson);
+                      VideoPlayerModal.show(
+                        context,
+                        lesson: nextLesson,
+                        onCompleted: () {
+                          context
+                              .read<TrainingCubit>()
+                              .markLessonCompleted(
+                                nextLesson.exerciseIndex,
+                                points: nextLesson.points,
+                              );
+                        },
+                      );
                     },
                   ),
                   SizedBox(height: 20.h),

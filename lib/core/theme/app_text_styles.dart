@@ -13,12 +13,17 @@ class AppTextStyles {
     letterSpacing: -0.5,
   );
 
+  static TextStyle headlineLarge = displayLarge;
+
   static TextStyle displayMedium = GoogleFonts.plusJakartaSans(
     fontSize: 24.sp,
     fontWeight: FontWeight.w700,
     color: AppColors.textPrimary,
     letterSpacing: -0.4,
   );
+
+  static TextStyle headlineMedium = displayMedium;
+
 
   static TextStyle titleLarge = GoogleFonts.plusJakartaSans(
     fontSize: 20.sp,

@@ -6,6 +6,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'core/constants/app_constants.dart';
+import 'core/services/notification_service.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/presentation/cubit/auth_cubit.dart';
 import 'features/auth/presentation/screens/auth_gate.dart';
@@ -38,12 +39,16 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
+  // Initialize Notification Service
+  await NotificationService.instance.initialize();
+
   // Initialize Supabase
   await Supabase.initialize(
     url: 'https://ptgzwiosneqdksjclxzz.supabase.co',
     anonKey:
         'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB0Z3p3aW9zbmVxZGtzamNseHp6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Mzc4MDcyNjcsImV4cCI6MjA1MzM4MzI2N30.72atrlPnd6H9xa1Sntkk8K-ZFt1JuBJty2EP7893oXw',
   );
+
 
   runApp(const ArticuliCareApp());
 }

@@ -5,6 +5,7 @@ import '../../../../core/constants/app_assets.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
+import '../../../auth/domain/user_entity.dart';
 import '../../../auth/presentation/cubit/auth_cubit.dart';
 import '../../../auth/presentation/cubit/auth_state.dart';
 import '../cubit/home_cubit.dart';
@@ -150,13 +151,22 @@ class HomeScreen extends StatelessWidget {
       builder: (context, state) {
         String displayName = 'Friend';
         String? photoUrl;
+        var role = UserRole.patient;
 
         if (state is Authenticated) {
           displayName = state.user.displayName.isNotEmpty
               ? state.user.displayName.split(' ').first
               : 'User';
           photoUrl = state.user.photoUrl;
+          role = state.user.role;
         }
+
+        final greetingPrefix = role.isTherapist ? 'Dr. ' : '';
+        final subtitle = role.isTherapist
+            ? 'Clinician & Speech Therapy Dashboard'
+            : role.isCaregiver
+                ? 'Caregiver & Patient Support Portal'
+                : 'Ready for your speech session?';
 
         return Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -164,16 +174,53 @@ class HomeScreen extends StatelessWidget {
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Hello, $displayName 👋',
-                  style: AppTextStyles.titleLarge.copyWith(
-                    fontSize: 22.sp,
-                    fontWeight: FontWeight.w800,
-                  ),
+                Row(
+                  children: [
+                    Text(
+                      'Hello, $greetingPrefix$displayName 👋',
+                      style: AppTextStyles.titleLarge.copyWith(
+                        fontSize: 20.sp,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    SizedBox(width: 8.w),
+                    Container(
+                      padding:
+                          EdgeInsets.symmetric(horizontal: 8.w, vertical: 2.h),
+                      decoration: BoxDecoration(
+                        color: role.isTherapist
+                            ? const Color(0xFFE8F5E9)
+                            : role.isCaregiver
+                                ? const Color(0xFFFFF3E0)
+                                : AppColors.primarySoft,
+                        borderRadius: BorderRadius.circular(8.r),
+                        border: Border.all(
+                          color: role.isTherapist
+                              ? const Color(0xFF81C784)
+                              : role.isCaregiver
+                                  ? const Color(0xFFFFB74D)
+                                  : AppColors.primaryLight,
+                          width: 0.8,
+                        ),
+                      ),
+                      child: Text(
+                        role.displayName,
+                        style: AppTextStyles.caption.copyWith(
+                          color: role.isTherapist
+                              ? const Color(0xFF2E7D32)
+                              : role.isCaregiver
+                                  ? const Color(0xFFE65100)
+                                  : AppColors.primary,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 10.sp,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 SizedBox(height: 4.h),
                 Text(
-                  'Ready for your speech session?',
+                  subtitle,
                   style: AppTextStyles.bodyMedium,
                 ),
               ],

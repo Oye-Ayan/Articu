@@ -1,4 +1,4 @@
-import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../constants/app_constants.dart';
 
@@ -9,50 +9,276 @@ class SupabaseService {
 
   SupabaseClient get client => Supabase.instance.client;
 
-  /// Fetch user profile data by ID
-  Future<Map<String, dynamic>?> getUserData(String userId) async {
+  // ---------------------------------------------------------------------------
+  // User Profiles & Data
+  // ---------------------------------------------------------------------------
+
+  /// Fetch full user profile by UID
+  Future<Map<String, dynamic>?> getUserProfile(String userId) async {
     try {
       final response = await client
+          .from(AppConstants.userProfilesTable)
+          .select()
+          .eq('id', userId)
+          .maybeSingle();
+      if (response != null) return response;
+
+      // Fallback to legacy users_data table
+      final legacy = await client
           .from(AppConstants.usersDataTable)
           .select()
           .eq('id', userId)
           .maybeSingle();
-      return response;
-    } catch (_) {
+      return legacy;
+    } catch (e) {
+      debugPrint('getUserProfile error: $e');
       return null;
     }
   }
 
-  /// Upsert user profile record
+  /// Backwards-compatible alias for getUserProfile
+  Future<Map<String, dynamic>?> getUserData(String userId) =>
+      getUserProfile(userId);
+
+  /// Upsert full user profile into user_profiles and sync users_data
+  Future<void> saveUserProfile({
+    String? id,
+    String? userId,
+    required String email,
+    String? username,
+    String? fullName,
+    String? profileImgUrl,
+    String? role,
+    String? phoneNumber,
+    String? qualifications,
+    bool? notificationEnabled,
+    String? reminderTime,
+  }) async {
+    try {
+      final effectiveId = id ?? userId ?? '';
+      final effectiveUsername = username ??
+          (fullName != null && fullName.isNotEmpty
+              ? fullName
+              : email.split('@').first);
+
+      final data = <String, dynamic>{
+        'id': effectiveId,
+        'email': email,
+        'username': effectiveUsername,
+        if (fullName != null) 'full_name': fullName,
+        if (profileImgUrl != null) 'profile_img_url': profileImgUrl,
+        if (role != null) 'role': role,
+        if (phoneNumber != null) 'phone_number': phoneNumber,
+        if (notificationEnabled != null)
+          'notification_enabled': notificationEnabled,
+        if (reminderTime != null) 'reminder_time': reminderTime,
+      };
+
+      await client
+          .from(AppConstants.userProfilesTable)
+          .upsert(data, onConflict: 'id');
+
+      // Also sync to legacy users_data table
+      await client.from(AppConstants.usersDataTable).upsert({
+        'id': effectiveId,
+        'email': email,
+        'username': effectiveUsername,
+        if (profileImgUrl != null) 'profile_img_url': profileImgUrl,
+        if (role != null) 'role': role,
+        'firebase_user_id': effectiveId,
+      }, onConflict: 'id');
+    } catch (e) {
+      debugPrint('saveUserProfile error: $e');
+      rethrow;
+    }
+  }
+
+  /// Backwards-compatible alias for saveUserProfile
   Future<void> saveUserData({
     required String id,
     required String email,
     required String username,
     String? profileImgUrl,
+    String? role,
+  }) =>
+      saveUserProfile(
+        id: id,
+        email: email,
+        username: username,
+        profileImgUrl: profileImgUrl,
+        role: role,
+      );
+
+  // ---------------------------------------------------------------------------
+  // Therapists Directory & Registration
+  // ---------------------------------------------------------------------------
+
+  /// Fetch therapists ordered by superhero_points / creation date
+  Future<List<Map<String, dynamic>>> fetchTherapists() async {
+    try {
+      final response = await client
+          .from(AppConstants.therapistsTable)
+          .select()
+          .order('created_at', ascending: false);
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      debugPrint('fetchTherapists error: $e');
+      return [];
+    }
+  }
+
+  /// Register a therapist in public.therapists
+  Future<void> registerTherapist({
+    required String name,
+    required String email,
+    required String qualifications,
+    required String userId,
+    int superheroPoints = 20,
   }) async {
     try {
-      final existing = await getUserData(id);
-      if (existing == null) {
-        await client.from(AppConstants.usersDataTable).insert({
-          'id': id,
-          'email': email,
-          'username': username,
-          'profile_img_url': profileImgUrl ?? '',
-        });
-      } else {
-        await client.from(AppConstants.usersDataTable).update({
-          'email': email,
-          'username': username,
-          'profile_img_url': profileImgUrl ?? existing['profile_img_url'] ?? '',
-        }).eq('id', id);
-      }
+      await client.from(AppConstants.therapistsTable).insert({
+        'name': name,
+        'email': email,
+        'qualifications': qualifications,
+        'user_id': userId,
+        'superhero_points': superheroPoints,
+        'created_at': DateTime.now().toIso8601String(),
+      });
     } catch (e) {
-      // Allow graceful offline fallback
+      debugPrint('registerTherapist error: $e');
       rethrow;
     }
   }
 
-  /// Upload binary file (e.g. image or audio) to specified bucket
+  // ---------------------------------------------------------------------------
+  // Training Videos & Progress
+  // ---------------------------------------------------------------------------
+
+  /// Get public URL for a video in training-videos bucket
+  String getVideoPublicUrl(String fileName) {
+    return client.storage
+        .from(AppConstants.trainingVideosBucket)
+        .getPublicUrl(fileName);
+  }
+
+  /// Fetch user training progress (all days, or filtered by dayNumber)
+  Future<List<Map<String, dynamic>>> fetchUserTrainingProgress({
+    required String userId,
+    int? dayNumber,
+  }) async {
+    try {
+      var query = client
+          .from(AppConstants.userTrainingTable)
+          .select()
+          .eq('user_id', userId);
+      if (dayNumber != null) {
+        query = query.eq('day_number', dayNumber);
+      }
+      final response = await query;
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      debugPrint('fetchUserTrainingProgress error: $e');
+      return [];
+    }
+  }
+
+
+  /// Save or update progress for an individual exercise
+  Future<void> saveExerciseProgress({
+    required String userId,
+    required int dayNumber,
+    required int exerciseIndex,
+    required bool completed,
+    int points = 10,
+  }) async {
+    try {
+      final existing = await client
+          .from(AppConstants.userTrainingTable)
+          .select()
+          .eq('user_id', userId)
+          .eq('day_number', dayNumber)
+          .eq('exercise_index', exerciseIndex)
+          .maybeSingle();
+
+      final now = DateTime.now().toUtc().toIso8601String();
+      final data = {
+        'user_id': userId,
+        'day_number': dayNumber,
+        'exercise_index': exerciseIndex,
+        'completed': completed,
+        'points': points,
+        'completed_at': completed ? now : null,
+        'updated_at': now,
+      };
+
+      if (existing != null) {
+        await client
+            .from(AppConstants.userTrainingTable)
+            .update(data)
+            .eq('id', existing['id']);
+      } else {
+        data['created_at'] = now;
+        await client.from(AppConstants.userTrainingTable).insert(data);
+      }
+    } catch (e) {
+      debugPrint('saveExerciseProgress error: $e');
+    }
+  }
+
+  /// Fetch day completion records for user
+  Future<List<Map<String, dynamic>>> fetchUserDayProgress(String userId) async {
+    try {
+      final response = await client
+          .from(AppConstants.userDayProgressTable)
+          .select()
+          .eq('user_id', userId);
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      debugPrint('fetchUserDayProgress error: $e');
+      return [];
+    }
+  }
+
+  /// Record day completion timestamp
+  Future<void> saveDayCompletion({
+    required String userId,
+    required int dayNumber,
+  }) async {
+    try {
+      final existing = await client
+          .from(AppConstants.userDayProgressTable)
+          .select()
+          .eq('user_id', userId)
+          .eq('day_number', dayNumber)
+          .maybeSingle();
+
+      final now = DateTime.now().toUtc().toIso8601String();
+      final data = {
+        'user_id': userId,
+        'day_number': dayNumber,
+        'completed_at': now,
+        'updated_at': now,
+      };
+
+      if (existing != null) {
+        await client
+            .from(AppConstants.userDayProgressTable)
+            .update(data)
+            .eq('id', existing['id']);
+      } else {
+        data['created_at'] = now;
+        await client.from(AppConstants.userDayProgressTable).insert(data);
+      }
+    } catch (e) {
+      debugPrint('saveDayCompletion error: $e');
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Speech Samples & Audio Storage
+  // ---------------------------------------------------------------------------
+
+  /// Upload binary file (image or audio) to specified bucket
   Future<String> uploadBinaryFile({
     required String bucket,
     required String path,
@@ -67,15 +293,101 @@ class SupabaseService {
     return publicUrl;
   }
 
+  /// Fetch recorded speech samples for user
+  Future<List<Map<String, dynamic>>> fetchSpeechSamples(String userId) async {
+    try {
+      final response = await client
+          .from(AppConstants.speechSamplesTable)
+          .select()
+          .or('user_id.eq.$userId,username.neq.null')
+          .order('timestamp', ascending: false);
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      debugPrint('fetchSpeechSamples error: $e');
+      return [];
+    }
+  }
+
   /// Save speech sample record in database
   Future<void> saveSpeechSample({
     required String audioUrl,
     required String username,
+    String? userId,
+    String? durationSeconds,
+    String? filePath,
+    String? analysisResult,
   }) async {
-    await client.from(AppConstants.speechSamplesTable).insert({
-      'audioUrl': audioUrl,
-      'timestamp': DateTime.now().toIso8601String(),
-      'username': username,
-    });
+    try {
+      await client.from(AppConstants.speechSamplesTable).insert({
+        'audioUrl': audioUrl,
+        'timestamp': DateTime.now().toIso8601String(),
+        'username': username,
+        if (userId != null) 'user_id': userId,
+        if (durationSeconds != null) 'duration_seconds': durationSeconds,
+        if (filePath != null) 'file_path': filePath,
+        if (analysisResult != null) 'analysis_result': analysisResult,
+      });
+    } catch (e) {
+      debugPrint('saveSpeechSample error: $e');
+      rethrow;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Daily Progress & Risk Assessments
+  // ---------------------------------------------------------------------------
+
+  /// Fetch user daily progress streak records
+  Future<List<Map<String, dynamic>>> fetchDailyProgress(String userId) async {
+    try {
+      final response = await client
+          .from(AppConstants.dailyProgressTable)
+          .select()
+          .eq('user_id', userId)
+          .order('created_at', ascending: false);
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      debugPrint('fetchDailyProgress error: $e');
+      return [];
+    }
+  }
+
+  /// Fetch completed risk assessments
+  Future<List<Map<String, dynamic>>> fetchRiskAssessments(String userId) async {
+    try {
+      final response = await client
+          .from(AppConstants.riskAssessmentsTable)
+          .select()
+          .eq('user_id', userId)
+          .order('created_at', ascending: false);
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      debugPrint('fetchRiskAssessments error: $e');
+      return [];
+    }
+  }
+
+  /// Save risk assessment record
+  Future<void> saveRiskAssessment({
+    required String userId,
+    required Map<String, dynamic> answers,
+    required int score,
+    required String riskLevel,
+    bool isCompleted = true,
+  }) async {
+    try {
+      final now = DateTime.now().toIso8601String();
+      await client.from(AppConstants.riskAssessmentsTable).insert({
+        'user_id': userId,
+        'answers': answers,
+        'score': score,
+        'risk_level': riskLevel,
+        'is_completed': isCompleted,
+        'created_at': now,
+        'completed_at': now,
+      });
+    } catch (e) {
+      debugPrint('saveRiskAssessment error: $e');
+    }
   }
 }

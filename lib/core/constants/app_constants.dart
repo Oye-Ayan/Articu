@@ -16,16 +16,25 @@ class AppConstants {
   static const String profileRoute = '/profile';
   static const String riskAssessmentRoute = '/risk_assessment';
   static const String progressRoute = '/progress';
+  static const String marhamRoute = '/marham';
 
   // Supabase Storage Buckets
   static const String profileImagesBucket = 'profile_images';
   static const String speechRecordingsBucket = 'speech_recordings';
+  static const String trainingVideosBucket = 'training-videos';
 
   // Supabase Tables
   static const String usersDataTable = 'users_data';
+  static const String userProfilesTable = 'user_profiles';
   static const String speechSamplesTable = 'speech_samples';
   static const String therapistsTable = 'therapists';
   static const String dailyProgressTable = 'daily_progress';
   static const String riskAssessmentsTable = 'risk_assessments';
   static const String userTrainingTable = 'user_training';
+  static const String userDayProgressTable = 'user_day_progress';
+  static const String exerciseProgressTable = 'exercise_progress';
+
+  // External Portals
+  static const String marhamConsultationUrl =
+      'https://www.marham.pk/doctors/speech-therapist';
 }
