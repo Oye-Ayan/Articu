@@ -24,120 +24,133 @@ class HomeScreen extends StatelessWidget {
         return Scaffold(
           backgroundColor: AppColors.background,
           body: SafeArea(
-            child: SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
-              padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 12.h),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // App Bar / Top Header
-                  _buildTopHeader(context),
-                  SizedBox(height: 20.h),
+            child: RefreshIndicator(
+              color: AppColors.primary,
+              onRefresh: () async {
+                await context.read<HomeCubit>().fetchDailyQuote();
+              },
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(
+                  parent: BouncingScrollPhysics(),
+                ),
+                padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 12.h),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // App Bar / Top Header
+                    _buildTopHeader(context),
+                    SizedBox(height: 20.h),
 
-                  // Quick Practice Banner
-                  QuickPracticeBanner(
-                    streakDays: homeState.dailyStreak,
-                    onStartPractice: () {
-                      Navigator.pushNamed(context, AppConstants.trainingRoute);
-                    },
-                  ),
-                  SizedBox(height: 24.h),
+                    // Quick Practice Banner
+                    QuickPracticeBanner(
+                      streakDays: homeState.dailyStreak,
+                      onStartPractice: () {
+                        Navigator.pushNamed(
+                            context, AppConstants.trainingRoute);
+                      },
+                    ),
+                    SizedBox(height: 24.h),
 
-                  // Quick Stats Row
-                  _buildQuickStats(context, homeState),
-                  SizedBox(height: 24.h),
+                    // Quick Stats Row
+                    _buildQuickStats(context, homeState),
+                    SizedBox(height: 24.h),
 
-                  // Featured Collection Title
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Therapy Modules',
-                        style: AppTextStyles.titleLarge,
-                      ),
-                      Text(
-                        'Active Tools',
-                        style: AppTextStyles.caption.copyWith(
-                          color: AppColors.primary,
-                          fontWeight: FontWeight.w700,
+                    // Featured Collection Title
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Therapy Modules',
+                          style: AppTextStyles.titleLarge,
                         ),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 14.h),
+                        Text(
+                          'Active Tools',
+                          style: AppTextStyles.caption.copyWith(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 14.h),
 
-                  // Feature 2x2 Grid
-                  GridView.count(
-                    crossAxisCount: 2,
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    crossAxisSpacing: 14.w,
-                    mainAxisSpacing: 14.h,
-                    childAspectRatio: 0.95,
-                    children: [
-                      FeatureGridCard(
-                        title: 'Speech Recording',
-                        subtitle: 'Capture and evaluate audio samples with AI',
-                        imagePath: AppAssets.speakIcon,
-                        badgeText: 'RECORDER',
-                        badgeColor: AppColors.primary,
-                        onTap: () {
-                          Navigator.pushNamed(
-                            context,
-                            AppConstants.speechRecordingRoute,
-                          );
-                        },
-                      ),
-                      FeatureGridCard(
-                        title: 'Risk Assessment',
-                        subtitle: 'Interactive screening for articulation & fluency',
-                        imagePath: AppAssets.riskIcon,
-                        badgeText: 'SCREENER',
-                        badgeColor: AppColors.cyan,
-                        onTap: () {
-                          Navigator.pushNamed(
-                            context,
-                            AppConstants.riskAssessmentRoute,
-                          );
-                        },
-                      ),
-                      FeatureGridCard(
-                        title: 'Therapeutic Drills',
-                        subtitle: 'Guided exercises for rhythm & pronunciation',
-                        imagePath: AppAssets.therapeuticExercises,
-                        badgeText: 'PRACTICE',
-                        badgeColor: const Color(0xFF8B5CF6),
-                        onTap: () {
-                          Navigator.pushNamed(
-                            context,
-                            AppConstants.trainingRoute,
-                          );
-                        },
-                      ),
-                      FeatureGridCard(
-                        title: 'Progress Tracking',
-                        subtitle: 'Live analytics, milestones & fluency stats',
-                        imagePath: AppAssets.progressTracking,
-                        badgeText: 'INSIGHTS',
-                        badgeColor: AppColors.success,
-                        onTap: () {
-                          Navigator.pushNamed(
-                            context,
-                            AppConstants.progressRoute,
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 24.h),
+                    // Feature 2x2 Grid
+                    GridView.count(
+                      crossAxisCount: 2,
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      crossAxisSpacing: 14.w,
+                      mainAxisSpacing: 14.h,
+                      childAspectRatio: 0.95,
+                      children: [
+                        FeatureGridCard(
+                          title: 'Speech Recording',
+                          subtitle:
+                              'Capture and evaluate audio samples with AI',
+                          imagePath: AppAssets.speakIcon,
+                          badgeText: 'RECORDER',
+                          badgeColor: AppColors.primary,
+                          onTap: () {
+                            Navigator.pushNamed(
+                              context,
+                              AppConstants.speechRecordingRoute,
+                            );
+                          },
+                        ),
+                        FeatureGridCard(
+                          title: 'Risk Assessment',
+                          subtitle:
+                              'Interactive screening for articulation & fluency',
+                          imagePath: AppAssets.riskIcon,
+                          badgeText: 'SCREENER',
+                          badgeColor: AppColors.cyan,
+                          onTap: () {
+                            Navigator.pushNamed(
+                              context,
+                              AppConstants.riskAssessmentRoute,
+                            );
+                          },
+                        ),
+                        FeatureGridCard(
+                          title: 'Therapeutic Drills',
+                          subtitle:
+                              'Guided exercises for rhythm & pronunciation',
+                          imagePath: AppAssets.therapeuticExercises,
+                          badgeText: 'PRACTICE',
+                          badgeColor: const Color(0xFF8B5CF6),
+                          onTap: () {
+                            Navigator.pushNamed(
+                              context,
+                              AppConstants.trainingRoute,
+                            );
+                          },
+                        ),
+                        FeatureGridCard(
+                          title: 'Progress Tracking',
+                          subtitle:
+                              'Live analytics, milestones & fluency stats',
+                          imagePath: AppAssets.progressTracking,
+                          badgeText: 'INSIGHTS',
+                          badgeColor: AppColors.success,
+                          onTap: () {
+                            Navigator.pushNamed(
+                              context,
+                              AppConstants.progressRoute,
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 24.h),
 
-                  // Daily Quote
-                  DailyQuoteCard(
-                    quote: homeState.dailyQuote,
-                    author: homeState.dailyAuthor,
-                  ),
-                  SizedBox(height: 24.h),
-                ],
+                    // Daily Quote
+                    DailyQuoteCard(
+                      quote: homeState.dailyQuote,
+                      author: homeState.dailyAuthor,
+                    ),
+                    SizedBox(height: 24.h),
+                  ],
+                ),
               ),
             ),
           ),
@@ -227,7 +240,9 @@ class HomeScreen extends StatelessWidget {
             ),
             GestureDetector(
               onTap: () {
-                context.read<HomeCubit>().setTabIndex(3); // Switch to Profile tab
+                context
+                    .read<HomeCubit>()
+                    .setTabIndex(3); // Switch to Profile tab
               },
               child: Container(
                 width: 48.w,

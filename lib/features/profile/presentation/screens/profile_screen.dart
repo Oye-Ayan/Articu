@@ -7,12 +7,30 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import '../../../../core/widgets/custom_snackbar.dart';
 import '../../../auth/presentation/cubit/auth_cubit.dart';
+import '../../../home/presentation/cubit/home_cubit.dart';
+import '../../../speech_recording/presentation/cubit/speech_cubit.dart';
+import '../../../training/presentation/cubit/training_cubit.dart';
 import '../cubit/profile_cubit.dart';
 import '../cubit/profile_state.dart';
 import 'edit_profile_sheet.dart';
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
+
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        context.read<ProfileCubit>().loadUserProfile();
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -32,9 +50,16 @@ class ProfileScreen extends StatelessWidget {
             title: const Text('Account & Settings'),
           ),
           body: SafeArea(
-            child: SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
-              padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 12.h),
+            child: RefreshIndicator(
+              color: AppColors.primary,
+              onRefresh: () async {
+                await context.read<ProfileCubit>().loadUserProfile();
+              },
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(
+                  parent: BouncingScrollPhysics(),
+                ),
+                padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 12.h),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
@@ -355,6 +380,7 @@ class ProfileScreen extends StatelessWidget {
                 ],
               ),
             ),
+            ),
           ),
         );
       },
@@ -520,9 +546,20 @@ class ProfileScreen extends StatelessWidget {
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(ctx);
-              context.read<AuthCubit>().signOut();
+              // Cleanly wipe all user-scoped cubit states immediately
+              context.read<ProfileCubit>().clear();
+              context.read<SpeechCubit>().clear();
+              context.read<TrainingCubit>().clear();
+              context.read<HomeCubit>().reset();
+              await context.read<AuthCubit>().signOut();
+              if (context.mounted) {
+                Navigator.of(context).pushNamedAndRemoveUntil(
+                  AppConstants.authGateRoute,
+                  (route) => false,
+                );
+              }
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.error,

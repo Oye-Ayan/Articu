@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:io';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -12,6 +14,7 @@ import 'profile_state.dart';
 class ProfileCubit extends Cubit<ProfileState> {
   final FirebaseService _firebaseService;
   final SupabaseService _supabaseService;
+  StreamSubscription<User?>? _authSubscription;
 
   ProfileCubit({
     FirebaseService? firebaseService,
@@ -19,12 +22,30 @@ class ProfileCubit extends Cubit<ProfileState> {
   })  : _firebaseService = firebaseService ?? FirebaseService(),
         _supabaseService = supabaseService ?? SupabaseService(),
         super(const ProfileState()) {
-    loadUserProfile();
+    _initAuthListener();
+  }
+
+  void _initAuthListener() {
+    _authSubscription = _firebaseService.authStateChanges.listen((user) {
+      if (user != null) {
+        loadUserProfile();
+      } else {
+        clear();
+      }
+    });
+  }
+
+  /// Clears profile state completely on logout
+  void clear() {
+    emit(const ProfileState());
   }
 
   Future<void> loadUserProfile() async {
     final user = _firebaseService.currentUser;
-    if (user == null) return;
+    if (user == null) {
+      clear();
+      return;
+    }
 
     String? photoUrl = user.photoURL;
     String username = user.displayName ?? 'User';
@@ -65,7 +86,10 @@ class ProfileCubit extends Cubit<ProfileState> {
     String pronunciation = '0%';
 
     try {
-      final samples = await _supabaseService.fetchSpeechSamples(user.uid);
+      final samples = await _supabaseService.fetchSpeechSamples(
+        userId: user.uid,
+        username: user.displayName,
+      );
       audioDrills = samples.length;
       if (samples.isNotEmpty) {
         pronunciation = '85%';
@@ -111,6 +135,7 @@ class ProfileCubit extends Cubit<ProfileState> {
       await _supabaseService.saveUserProfile(
         userId: user.uid,
         email: user.email ?? '',
+        username: newName,
         fullName: newName,
         profileImgUrl: state.profileImgUrl,
         role: state.role.displayName,
@@ -225,6 +250,12 @@ class ProfileCubit extends Cubit<ProfileState> {
         );
       } catch (_) {}
     }
+  }
+
+  @override
+  Future<void> close() {
+    _authSubscription?.cancel();
+    return super.close();
   }
 }
 

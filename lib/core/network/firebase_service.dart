@@ -8,6 +8,10 @@ class FirebaseService {
   FirebaseService._internal();
 
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final GoogleSignIn _googleSignIn = GoogleSignIn(
+    serverClientId:
+        '322252487406-o859jrf2rsd7113sb7du195q720c13uh.apps.googleusercontent.com',
+  );
 
   Stream<User?> get authStateChanges => _auth.authStateChanges();
   User? get currentUser => _auth.currentUser;
@@ -45,15 +49,11 @@ class FirebaseService {
   /// Sign in with Google with timeout protection
   Future<UserCredential?> signInWithGoogle() async {
     try {
-      final GoogleSignIn googleSignIn = GoogleSignIn(
-        serverClientId:
-            '322252487406-o859jrf2rsd7113sb7du195q720c13uh.apps.googleusercontent.com',
-      );
       try {
-        await googleSignIn.signOut();
+        await _googleSignIn.signOut();
       } catch (_) {}
 
-      final GoogleSignInAccount? gUser = await googleSignIn.signIn().timeout(
+      final GoogleSignInAccount? gUser = await _googleSignIn.signIn().timeout(
         const Duration(seconds: 40),
         onTimeout: () {
           throw TimeoutException(
@@ -88,11 +88,18 @@ class FirebaseService {
     }
   }
 
-  /// Sign out
+  /// Sign out completely, clearing Firebase auth and Google account cache
   Future<void> signOut() async {
-    await Future.wait([
-      _auth.signOut(),
-      GoogleSignIn().signOut(),
-    ]);
+    await _auth.signOut();
+    try {
+      await _googleSignIn.signOut();
+    } catch (e) {
+      // Ignored if not signed into Google
+    }
+    try {
+      await _googleSignIn.disconnect();
+    } catch (e) {
+      // Ignored if not previously connected
+    }
   }
 }

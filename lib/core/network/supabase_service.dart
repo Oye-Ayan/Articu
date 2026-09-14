@@ -154,11 +154,12 @@ class SupabaseService {
   // Training Videos & Progress
   // ---------------------------------------------------------------------------
 
-  /// Get public URL for a video in training-videos bucket
+  /// Get public URL for a video in training_videos folder under speech_recordings bucket
   String getVideoPublicUrl(String fileName) {
+    final encodedFileName = Uri.encodeComponent(fileName);
     return client.storage
-        .from(AppConstants.trainingVideosBucket)
-        .getPublicUrl(fileName);
+        .from(AppConstants.speechRecordingsBucket)
+        .getPublicUrl('training_videos/$encodedFileName');
   }
 
   /// Fetch user training progress (all days, or filtered by dayNumber)
@@ -293,14 +294,24 @@ class SupabaseService {
     return publicUrl;
   }
 
-  /// Fetch recorded speech samples for user
-  Future<List<Map<String, dynamic>>> fetchSpeechSamples(String userId) async {
+  /// Fetch recorded speech samples strictly for the authenticated user
+  Future<List<Map<String, dynamic>>> fetchSpeechSamples({
+    required String userId,
+    String? username,
+  }) async {
     try {
-      final response = await client
-          .from(AppConstants.speechSamplesTable)
-          .select()
-          .or('user_id.eq.$userId,username.neq.null')
-          .order('timestamp', ascending: false);
+      if (userId.isEmpty) return [];
+
+      var query = client.from(AppConstants.speechSamplesTable).select();
+
+      if (username != null && username.isNotEmpty) {
+        // Matches user's UID or legacy recordings made under this exact username where user_id was null
+        query = query.or('user_id.eq.$userId,and(user_id.is.null,username.eq.$username)');
+      } else {
+        query = query.eq('user_id', userId);
+      }
+
+      final response = await query.order('timestamp', ascending: false);
       return List<Map<String, dynamic>>.from(response);
     } catch (e) {
       debugPrint('fetchSpeechSamples error: $e');

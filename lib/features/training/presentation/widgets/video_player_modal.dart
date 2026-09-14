@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:video_player/video_player.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
@@ -47,6 +49,8 @@ class _VideoPlayerModalState extends State<VideoPlayerModal> {
   bool _controlsVisible = true;
   String? _errorMessage;
   Timer? _hideTimer;
+  double? _downloadProgress;
+  String _loadingStatus = 'Buffering video drill...';
 
   @override
   void initState() {
@@ -54,17 +58,145 @@ class _VideoPlayerModalState extends State<VideoPlayerModal> {
     _initPlayer();
   }
 
-  Future<void> _initPlayer() async {
+  Future<File?> _ensureVideoCached(
+    String url,
+    String fileName, {
+    bool forceRefresh = false,
+  }) async {
+    try {
+      final tempDir = await getTemporaryDirectory();
+
+      // Clean up legacy cache directory from previous versions if present
+      final oldDir = Directory('${tempDir.path}/training_videos');
+      if (oldDir.existsSync()) {
+        try {
+          oldDir.deleteSync(recursive: true);
+        } catch (_) {}
+      }
+
+      final dir = Directory('${tempDir.path}/training_videos_v2');
+      if (!dir.existsSync()) {
+        await dir.create(recursive: true);
+      }
+
+      final safeName =
+          'std_${fileName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_')}';
+      final targetFile = File('${dir.path}/$safeName');
+
+      if (!forceRefresh &&
+          targetFile.existsSync() &&
+          targetFile.lengthSync() > 10000) {
+        return targetFile;
+      }
+
+      if (targetFile.existsSync()) {
+        try {
+          targetFile.deleteSync();
+        } catch (_) {}
+      }
+
+      if (mounted) {
+        setState(() {
+          _loadingStatus = 'Optimizing video for playback...';
+          _downloadProgress = 0.0;
+        });
+      }
+
+      final httpClient = HttpClient();
+      httpClient.connectionTimeout = const Duration(seconds: 20);
+      final request = await httpClient.getUrl(Uri.parse(url));
+      request.headers.set('User-Agent', 'Mozilla/5.0 (Linux; Android) ArticuliCare');
+      request.headers.set('Accept', '*/*');
+      final response = await request.close();
+
+      if (response.statusCode == 200) {
+        final totalBytes = response.contentLength;
+        int receivedBytes = 0;
+        final sink = targetFile.openWrite();
+
+        await for (final chunk in response) {
+          sink.add(chunk);
+          receivedBytes += chunk.length;
+          if (totalBytes > 0 && mounted) {
+            setState(() {
+              _downloadProgress = receivedBytes / totalBytes;
+            });
+          }
+        }
+
+        await sink.close();
+        httpClient.close();
+        return targetFile;
+      } else {
+        httpClient.close();
+      }
+    } catch (e) {
+      debugPrint('Error caching video locally: $e');
+    }
+    return null;
+  }
+
+  Future<void> _initPlayer({bool forceRefresh = false}) async {
     final url = widget.lesson.videoUrl;
     if (url.isEmpty) {
-      setState(() {
-        _errorMessage = 'No video URL provided for this exercise.';
-      });
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'No video URL provided for this exercise.';
+        });
+      }
       return;
     }
 
+    // Safely cleanup any previous controller before re-initializing
+    if (_controller != null) {
+      try {
+        _controller!.removeListener(_onPlayerUpdate);
+        await _controller!.pause();
+        await _controller!.dispose();
+      } catch (_) {}
+      _controller = null;
+    }
+
+    if (mounted) {
+      setState(() {
+        _isInitialized = false;
+        _errorMessage = null;
+        _downloadProgress = null;
+        _loadingStatus = 'Preparing video drill...';
+      });
+    }
+
+    File? cachedFile;
     try {
-      final controller = VideoPlayerController.networkUrl(Uri.parse(url));
+      final fileName = widget.lesson.videoFileName.isNotEmpty
+          ? widget.lesson.videoFileName
+          : 'drill_${widget.lesson.id}.mp4';
+
+      cachedFile = await _ensureVideoCached(
+        url,
+        fileName,
+        forceRefresh: forceRefresh,
+      );
+
+      VideoPlayerController controller;
+      if (cachedFile != null &&
+          cachedFile.existsSync() &&
+          cachedFile.lengthSync() > 10000) {
+        if (mounted) {
+          setState(() {
+            _loadingStatus = 'Initializing playback engine...';
+          });
+        }
+        controller = VideoPlayerController.file(cachedFile);
+      } else {
+        if (mounted) {
+          setState(() {
+            _loadingStatus = 'Streaming video from cloud...';
+          });
+        }
+        controller = VideoPlayerController.networkUrl(Uri.parse(url));
+      }
+
       _controller = controller;
 
       await controller.initialize();
@@ -80,10 +212,36 @@ class _VideoPlayerModalState extends State<VideoPlayerModal> {
         _startHideTimer();
       }
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _errorMessage = 'Failed to load video: $e';
-        });
+      debugPrint('Primary video init error: $e. Trying fallback stream...');
+      if (cachedFile != null && cachedFile.existsSync()) {
+        try {
+          cachedFile.deleteSync();
+        } catch (_) {}
+      }
+      // Fallback: If file-based initialization hit an issue, attempt direct network stream
+      try {
+        final fallbackController =
+            VideoPlayerController.networkUrl(Uri.parse(url));
+        _controller = fallbackController;
+        await fallbackController.initialize();
+        fallbackController.addListener(_onPlayerUpdate);
+        fallbackController.setLooping(false);
+
+        if (mounted) {
+          setState(() {
+            _isInitialized = true;
+            _errorMessage = null;
+          });
+          fallbackController.play();
+          _startHideTimer();
+        }
+      } catch (fallbackError) {
+        if (mounted) {
+          setState(() {
+            _errorMessage =
+                'Could not play video ($fallbackError).\n\nPlease check network or tap Retry to re-download.';
+          });
+        }
       }
     }
   }
@@ -143,8 +301,14 @@ class _VideoPlayerModalState extends State<VideoPlayerModal> {
   @override
   void dispose() {
     _hideTimer?.cancel();
-    _controller?.removeListener(_onPlayerUpdate);
-    _controller?.dispose();
+    if (_controller != null) {
+      try {
+        _controller!.removeListener(_onPlayerUpdate);
+        _controller!.pause();
+        _controller!.dispose();
+      } catch (_) {}
+      _controller = null;
+    }
     super.dispose();
   }
 
@@ -237,21 +401,39 @@ class _VideoPlayerModalState extends State<VideoPlayerModal> {
                             AppButton(
                               text: 'Retry Loading Video',
                               onTap: () {
-                                setState(() {
-                                  _errorMessage = null;
-                                  _isInitialized = false;
-                                });
-                                _initPlayer();
+                                _initPlayer(forceRefresh: true);
                               },
                             ),
-
                           ],
                         ),
                       )
                     : !_isInitialized
-                        ? const Center(
-                            child: CircularProgressIndicator(
-                              color: AppColors.primary,
+                        ? Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                SizedBox(
+                                  width: 44.w,
+                                  height: 44.w,
+                                  child: CircularProgressIndicator(
+                                    value: _downloadProgress,
+                                    strokeWidth: 3.2,
+                                    color: AppColors.primary,
+                                    backgroundColor:
+                                        AppColors.primary.withValues(alpha: 0.2),
+                                  ),
+                                ),
+                                SizedBox(height: 16.h),
+                                Text(
+                                  _downloadProgress != null
+                                      ? '${(_downloadProgress! * 100).toInt()}% • $_loadingStatus'
+                                      : _loadingStatus,
+                                  style: AppTextStyles.bodySmall.copyWith(
+                                    color: Colors.white70,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
                             ),
                           )
                         : GestureDetector(

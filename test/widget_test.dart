@@ -7,6 +7,7 @@ import 'package:articulicare/features/auth/domain/user_entity.dart';
 import 'package:articulicare/features/training/domain/training_lesson.dart';
 import 'package:articulicare/features/speech_recording/domain/recording_model.dart';
 import 'package:articulicare/features/home/presentation/screens/splash_screen.dart';
+import 'package:articulicare/features/home/presentation/cubit/home_cubit.dart';
 
 void main() {
   group('App Constants & Configuration', () {
@@ -141,5 +142,20 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
   });
-}
 
+  group('Session State Management on Logout', () {
+    test('HomeCubit resets active tab and practice minutes on session clear', () {
+      final cubit = HomeCubit();
+      cubit.setTabIndex(4);
+      cubit.incrementPracticeMinutes(25);
+
+      expect(cubit.state.selectedIndex, equals(4));
+      expect(cubit.state.minutesPracticed, equals(37));
+
+      cubit.reset();
+
+      expect(cubit.state.selectedIndex, equals(0));
+      expect(cubit.state.minutesPracticed, equals(0));
+    });
+  });
+}

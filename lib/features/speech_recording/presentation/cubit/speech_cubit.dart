@@ -24,6 +24,7 @@ class SpeechCubit extends Cubit<SpeechState> {
   StreamSubscription? _positionSubscription;
   StreamSubscription? _durationSubscription;
   StreamSubscription? _completeSubscription;
+  StreamSubscription<User?>? _authSubscription;
 
   SpeechCubit({
     SupabaseService? supabaseService,
@@ -32,7 +33,23 @@ class SpeechCubit extends Cubit<SpeechState> {
         _firebaseAuth = firebaseAuth ?? FirebaseAuth.instance,
         super(const SpeechState()) {
     _initAudioPlayerListeners();
-    fetchLiveRecordings();
+    _initAuthListener();
+  }
+
+  void _initAuthListener() {
+    _authSubscription = _firebaseAuth.authStateChanges().listen((user) {
+      if (user != null) {
+        fetchLiveRecordings();
+      } else {
+        clear();
+      }
+    });
+  }
+
+  /// Clears speech recordings and resets state completely on sign-out
+  void clear() {
+    _audioPlayer.stop();
+    emit(const SpeechState());
   }
 
   void _initAudioPlayerListeners() {
@@ -61,10 +78,14 @@ class SpeechCubit extends Cubit<SpeechState> {
   Future<void> fetchLiveRecordings() async {
     final user = _firebaseAuth.currentUser;
     final userId = user?.uid ?? '';
+    final username = user?.displayName;
 
     emit(state.copyWith(isLoadingRecordings: true));
     try {
-      final rows = await _supabaseService.fetchSpeechSamples(userId);
+      final rows = await _supabaseService.fetchSpeechSamples(
+        userId: userId,
+        username: username,
+      );
       final samples = rows.map((m) => SpeechSampleModel.fromMap(m)).toList();
 
       emit(state.copyWith(
@@ -291,6 +312,7 @@ class SpeechCubit extends Cubit<SpeechState> {
   @override
   Future<void> close() {
     _durationTimer?.cancel();
+    _authSubscription?.cancel();
     _playerStateSubscription?.cancel();
     _positionSubscription?.cancel();
     _durationSubscription?.cancel();

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../../core/network/supabase_service.dart';
@@ -7,6 +8,7 @@ import 'training_state.dart';
 class TrainingCubit extends Cubit<TrainingState> {
   final SupabaseService _supabaseService;
   final FirebaseAuth _firebaseAuth;
+  StreamSubscription<User?>? _authSubscription;
 
   TrainingCubit({
     SupabaseService? supabaseService,
@@ -15,6 +17,30 @@ class TrainingCubit extends Cubit<TrainingState> {
         _firebaseAuth = firebaseAuth ?? FirebaseAuth.instance,
         super(const TrainingState()) {
     initLessons();
+    _initAuthListener();
+  }
+
+  void _initAuthListener() {
+    _authSubscription = _firebaseAuth.authStateChanges().listen((user) {
+      if (user != null) {
+        refreshUserProgress();
+      } else {
+        clear();
+      }
+    });
+  }
+
+  /// Clears user training progress and resets to initial uncompleted drills on sign-out
+  void clear() {
+    final resetLessons =
+        state.lessons.map((l) => l.copyWith(isCompleted: false)).toList();
+    emit(state.copyWith(
+      lessons: resetLessons,
+      completedCount: 0,
+      totalPoints: 0,
+      selectedDay: 1,
+      dayCompletionTimes: const {},
+    ));
   }
 
   static const List<Map<String, String>> _videoCatalog = [
@@ -217,5 +243,11 @@ class TrainingCubit extends Cubit<TrainingState> {
 
     // Unlocked once previous day is marked complete or after cooldown
     return true;
+  }
+
+  @override
+  Future<void> close() {
+    _authSubscription?.cancel();
+    return super.close();
   }
 }
