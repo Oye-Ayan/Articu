@@ -46,20 +46,16 @@ class _AppButtonState extends State<AppButton> {
         gradient = isEnabled ? AppColors.primaryGradient : null;
         bg = isEnabled ? AppColors.primary : AppColors.primaryLight;
         textColor = Colors.white;
-        break;
       case AppButtonType.secondary:
         bg = AppColors.primarySoft;
         textColor = AppColors.primaryDark;
-        break;
       case AppButtonType.outline:
         bg = Colors.transparent;
         border = Border.all(color: AppColors.primary, width: 1.5);
         textColor = AppColors.primary;
-        break;
       case AppButtonType.danger:
         bg = AppColors.error;
         textColor = Colors.white;
-        break;
     }
 
     return AnimatedScale(

@@ -65,29 +65,13 @@ class _VideoPlayerModalState extends State<VideoPlayerModal> {
   }) async {
     try {
       final tempDir = await getTemporaryDirectory();
-
-      // Clean up legacy cache directories from previous versions
-      for (final legacyPath in [
-        'training_videos',
-        'training_videos_v2',
-        'training_videos_v3',
-        'training_videos_v4'
-      ]) {
-        final legacyDir = Directory('${tempDir.path}/$legacyPath');
-        if (legacyDir.existsSync()) {
-          try {
-            legacyDir.deleteSync(recursive: true);
-          } catch (_) {}
-        }
-      }
-
-      final dir = Directory('${tempDir.path}/training_videos_v5');
+      final dir = Directory('${tempDir.path}/articuli_video_cache');
       if (!dir.existsSync()) {
         await dir.create(recursive: true);
       }
 
       final safeName =
-          'v5_${fileName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_')}';
+          'drill_${fileName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_')}';
       final targetFile = File('${dir.path}/$safeName');
 
       if (!forceRefresh &&

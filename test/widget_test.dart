@@ -13,6 +13,8 @@ void main() {
   group('App Constants & Configuration', () {
     test('App constants and theme verification', () {
       expect(AppConstants.appName, equals('ArticuliCare'));
+      expect(AppConstants.supabaseUrl, contains('supabase.co'));
+      expect(AppConstants.supabaseAnonKey.isNotEmpty, isTrue);
       expect(AppColors.primary, isNotNull);
       expect(AppConstants.trainingVideosBucket, equals('training-videos'));
       expect(AppConstants.speechRecordingsBucket, equals('speech_recordings'));

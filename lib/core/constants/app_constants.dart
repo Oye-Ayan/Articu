@@ -2,13 +2,16 @@ class AppConstants {
   AppConstants._();
 
   static const String appName = 'ArticuliCare';
-  static const String appTagline = 'Speak with Confidence, Improve Every Day';
+  static const String appTagline = 'Precision Articulation & Speech Therapy';
+
+  // Supabase Configuration
+  static const String supabaseUrl = 'https://ptgzwiosneqdksjclxzz.supabase.co';
+  static const String supabaseAnonKey =
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB0Z3p3aW9zbmVxZGtzamNseHp6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Mzc4MDcyNjcsImV4cCI6MjA1MzM4MzI2N30.72atrlPnd6H9xa1Sntkk8K-ZFt1JuBJty2EP7893oXw';
 
   // Routes
   static const String splashRoute = '/splash';
   static const String authGateRoute = '/auth_gate';
-  static const String loginRoute = '/login';
-  static const String registerRoute = '/register';
   static const String mainNavRoute = '/main';
   static const String speechRecordingRoute = '/speech_recording';
   static const String trainingRoute = '/training';
@@ -16,7 +19,6 @@ class AppConstants {
   static const String profileRoute = '/profile';
   static const String riskAssessmentRoute = '/risk_assessment';
   static const String progressRoute = '/progress';
-  static const String marhamRoute = '/marham';
 
   // Supabase Storage Buckets
   static const String profileImagesBucket = 'profile_images';
@@ -32,9 +34,9 @@ class AppConstants {
   static const String riskAssessmentsTable = 'risk_assessments';
   static const String userTrainingTable = 'user_training';
   static const String userDayProgressTable = 'user_day_progress';
-  static const String exerciseProgressTable = 'exercise_progress';
 
-  // External Portals
+  // External APIs & Portals
+  static const String zenQuotesApiUrl = 'https://zenquotes.io/api/random';
   static const String marhamConsultationUrl =
       'https://www.marham.pk/doctors/speech-therapist';
 }

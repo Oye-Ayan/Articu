@@ -116,22 +116,6 @@ class SupabaseService {
     }
   }
 
-  /// Backwards-compatible alias for saveUserProfile
-  Future<void> saveUserData({
-    required String id,
-    required String email,
-    required String username,
-    String? profileImgUrl,
-    String? role,
-  }) =>
-      saveUserProfile(
-        id: id,
-        email: email,
-        username: username,
-        profileImgUrl: profileImgUrl,
-        role: role,
-      );
-
   // ---------------------------------------------------------------------------
   // Therapists Directory & Registration
   // ---------------------------------------------------------------------------

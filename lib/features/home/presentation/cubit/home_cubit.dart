@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../../core/constants/app_constants.dart';
 import 'home_state.dart';
 
 class HomeCubit extends Cubit<HomeState> {
@@ -30,7 +31,7 @@ class HomeCubit extends Cubit<HomeState> {
       final client = HttpClient();
       client.connectionTimeout = const Duration(seconds: 8);
       final request =
-          await client.getUrl(Uri.parse('https://zenquotes.io/api/today'));
+          await client.getUrl(Uri.parse(AppConstants.zenQuotesApiUrl));
       final response = await request.close();
 
       if (response.statusCode == 200) {
