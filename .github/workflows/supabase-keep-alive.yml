@@ -11,21 +11,31 @@ jobs:
     name: Database Keep-Alive Health Check
     runs-on: ubuntu-latest
     steps:
-      - name: Ping Supabase REST API
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL != '' && secrets.SUPABASE_URL || 'https://ptgzwiosneqdksjclxzz.supabase.co' }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY != '' && secrets.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB0Z3p3aW9zbmVxZGtzamNseHp6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Mzc4MDcyNjcsImV4cCI6MjA1MzM4MzI2N30.72atrlPnd6H9xa1Sntkk8K-ZFt1JuBJty2EP7893oXw' }}
+      - name: Verify Configuration Secrets
         run: |
           if [ -z "${{ secrets.SUPABASE_URL }}" ] || [ -z "${{ secrets.SUPABASE_ANON_KEY }}" ]; then
-            echo "::notice::Using project default Supabase credentials. You can also define custom credentials in Settings -> Secrets and variables -> Actions."
+            echo "::error::SUPABASE_URL or SUPABASE_ANON_KEY secret is missing."
+            echo "Please configure them in your repository settings:"
+            echo "Settings -> Secrets and variables -> Actions -> New repository secret"
+            exit 1
           fi
+
+      - name: Ping Supabase REST API
+        env:
+          RAW_URL: ${{ secrets.SUPABASE_URL }}
+          RAW_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
           echo "Executing lightweight keep-alive query against Supabase..."
+          
+          # Clean up any accidental quotes, whitespace, newlines, and trailing slashes from secrets
+          CLEAN_URL=$(echo "${RAW_URL}" | tr -d "\"'\''\r\n" | xargs | sed "s:/*$::")
+          CLEAN_KEY=$(echo "${RAW_KEY}" | tr -d "\"'\''\r\n " | xargs)
           
           # Query a single ID with limit 1 to generate legitimate database read activity
           HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            -X GET "${SUPABASE_URL}/rest/v1/therapists?select=id&limit=1" \
-            -H "apikey: ${SUPABASE_ANON_KEY}" \
-            -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
+            -X GET "${CLEAN_URL}/rest/v1/therapists?select=id&limit=1" \
+            -H "apikey: ${CLEAN_KEY}" \
+            -H "Authorization: Bearer ${CLEAN_KEY}" \
             -H "User-Agent: ArticuliCare-KeepAlive-Bot/1.0" \
             --connect-timeout 15 \
             --max-time 30)
