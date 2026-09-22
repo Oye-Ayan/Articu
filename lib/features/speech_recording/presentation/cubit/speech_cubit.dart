@@ -140,9 +140,14 @@ class SpeechCubit extends Cubit<SpeechState> {
     try {
       final tempDir = await getTemporaryDirectory();
       final path =
-          '${tempDir.path}/rec_${DateTime.now().millisecondsSinceEpoch}.aac';
+          '${tempDir.path}/rec_${DateTime.now().millisecondsSinceEpoch}.wav';
 
-      await _recorder.startRecorder(toFile: path);
+      await _recorder.startRecorder(
+        toFile: path,
+        codec: Codec.pcm16WAV,
+        sampleRate: 16000,
+        numChannels: 1,
+      );
 
       _durationTimer?.cancel();
       _durationTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
@@ -206,7 +211,7 @@ class SpeechCubit extends Cubit<SpeechState> {
       final safeUsername = username.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
       final dateStr = DateTime.now().toIso8601String().split('T').first;
       final storagePath =
-          'recordings/$safeUsername/$dateStr/audio_${DateTime.now().millisecondsSinceEpoch}.aac';
+          'recordings/$safeUsername/$dateStr/audio_${DateTime.now().millisecondsSinceEpoch}.wav';
 
       final publicUrl = await _supabaseService.uploadBinaryFile(
         bucket: AppConstants.speechRecordingsBucket,

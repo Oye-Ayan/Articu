@@ -25,8 +25,10 @@ import 'features/therapist/presentation/screens/therapist_screen.dart';
 import 'features/training/presentation/cubit/training_cubit.dart';
 import 'features/training/presentation/screens/training_screen.dart';
 import 'services/firebase_options.dart';
+import 'package:flutter_skill/flutter_skill.dart';
 
 void main() async {
+  FlutterSkillBinding.ensureInitialized();
   WidgetsFlutterBinding.ensureInitialized();
 
   // Set preferred system orientations
